@@ -2173,7 +2173,7 @@ function aiEconomy(tag,P){const N=S.nat[tag];const E=ERAS[S.era];const war=inWar
   const waiting=N.train.filter(t=>!t.st).length;
   let strSum=0,strN=0;for(const a of S.arm)if(a.tag===tag){strSum+=a.str*divs(a);strN+=divs(a);}const avgStr=strN?strSum/strN:1;
   if(cur<target&&waiting<2&&manAvail(tag)>40&&(avgStr>0.9||N.eq.g>4000)&&N.eq.g>600){const n=Math.min(3,target-cur);for(let k=0;k<n;k++){const r=rng();
-    const t=r<(S.era==='1805'?0.62:0.55)?'inf':r<0.8?'mob':'art';N.train.push({t,st:false,d:0});}}
+    const rd=!N.ai&&N.auto&&N.auto.recd||'bal';const pi=rd==='inf'?0.8:rd==='mob'?0.35:rd==='art'?0.45:(S.era==='1805'?0.62:0.55),pm=rd==='mob'?0.85:rd==='art'?0.6:rd==='inf'?0.9:0.8;const t=r<pi?'inf':r<pm?'mob':'art';N.train.push({t,st:false,d:0});}}
   }
   if(!on('trd'))return;
   // trade
@@ -2187,7 +2187,9 @@ function aiEconomy(tag,P){const N=S.nat[tag];const E=ERAS[S.era];const war=inWar
 }
 function aiMilitary(tag){const N=S.nat[tag];let pfN=0;const fpL=(a,t)=>pfN++<16?findPath(a,t):null;const war=inWar(tag);
   const mine=S.arm.filter(a=>a.ctl===tag&&!(!N.ai&&a.man&&S.day-a.man<30));if(!mine.length)return;
-  const stance=N.ov?N.vord.stance:(!N.ai&&N.auto&&N.auto.stance)||'attack';const focusT=N.ov?N.vord.target:(N.aiFocus&&atWar(tag,N.aiFocus)?N.aiFocus:null);
+  let stance=N.ov?N.vord.stance:(!N.ai&&N.auto&&N.auto.stance)||'bal';const doc=stance==='occupy'||stance==='bal'||stance==='attack'?stance:'bal';if(stance==='occupy'||stance==='bal')stance='attack';if(stance==='attack'&&N.ov)stance='attack';
+  const tgt0=!N.ai&&N.auto&&N.auto.tgt&&atWar(tag,N.auto.tgt)?N.auto.tgt:null;const focusT=N.ov?N.vord.target:tgt0||(N.aiFocus&&atWar(tag,N.aiFocus)?N.aiFocus:null);
+  const docK=N.ai?1:doc==='attack'?0.8:doc==='occupy'?1.15:1;
   const byReg=new Map();for(const a of S.arm){if(!byReg.has(a.r))byReg.set(a.r,[]);byReg.get(a.r).push(a);}
   const capAt=r=>TERRAIN[G.regs[r].t].sup*(1+0.12*N.tech.log)*(0.6+0.2*S.reg[r].inf)*1.35+4;
   const dist=(r1,r2)=>{const dx=G.regs[r1].cx-G.regs[r2].cx,dy=G.regs[r1].cy-G.regs[r2].cy;return Math.sqrt(dx*dx+dy*dy);};
@@ -2211,7 +2213,7 @@ function aiMilitary(tag){const N=S.nat[tag];let pfN=0;const fpL=(a,t)=>pfN++<16?
         if(have<thr*1.3){const cand=mine.filter(a=>a.bat==null&&a.r!==N.cap&&!(near.get(a.r)<=1&&!a.path.length)).sort((x,y)=>dist(x.r,N.cap)-dist(y.r,N.cap));
           for(const a of cand){if(have>=thr*1.3)break;const p=fpL(a,N.cap);if(!p)continue;a.path=p.filter(r=>passable(tag,r));have+=unitPow(a,'def');}}}}
     // 1) coordinated offense: target-centric
-    if(stance!=='defend'){
+    {
       const ownDef=[...need0].some(([f,d])=>d>0&&myRegion(f));const avail=idle.filter(a=>threat.has(a.r)&&a.org>=0.6&&a.str>=0.45&&!(pressed&&need0.get(a.r)>0&&!(focusT&&G.adj[a.r].some(e=>S.reg[e.r].c===focusT)))&&(myRegion(a.r)||!ownDef));
       const byR=new Map();for(const a of avail){if(!byR.has(a.r))byR.set(a.r,[]);byR.get(a.r).push(a);}
       const cands=new Map();
@@ -2220,12 +2222,13 @@ function aiMilitary(tag){const N=S.nat[tag];let pfN=0;const fpL=(a,t)=>pfN++<16?
       for(const [t,srcs] of cands){const hp=hostPow.get(t)||0;const R2=S.reg[t];const tg=G.regs[t];
         let sum=0;const arms=[];for(const {r,s:st} of srcs){for(const a of byR.get(r)){sum+=unitPow(a,'atk')*(st?0.65:1);arms.push(a);}}
         if(!arms.length)continue;const dirs=new Set(srcs.map(x=>x.r)).size;
-        if(!hp){if(srcs.every(x=>x.s))continue;plans.push({t,sc:3+tg.vp/5,arms,empty:true});continue;}
+        const liberate0=S.reg[t].o===tag||(N.ov&&S.reg[t].o===N.ov);if(stance==='defend'&&!liberate0)continue;
+        if(!hp){if(srcs.every(x=>x.s))continue;plans.push({t,sc:(3+tg.vp/5)*(doc==='occupy'?2.2:1)*(focusT&&R2.c===focusT?1.5:1),arms,empty:true});continue;}
         const dp=hp*TERRAIN[tg.t].def*(1+R2.fort*0.13)*ERA_COMBAT[S.era].def;const ratio=sum*(1+0.15*(dirs-1))/(dp+0.01);
-        const liberate=S.reg[t].o===tag||(N.ov&&S.reg[t].o===N.ov);const isF=focusT&&R2.c===focusT;if(ratio<(liberate?1.1:isF?1.2:pressed?2:1.4))continue;let sc=ratio+tg.vp/8+(liberate?2:0);if(focusT&&R2.c===focusT)sc*=1.6;if(S.nat[R2.c]&&S.nat[R2.c].cap===t)sc*=1.5;plans.push({t,sc,arms,dp,ratio});}
+        const liberate=S.reg[t].o===tag||(N.ov&&S.reg[t].o===N.ov);const isF=focusT&&R2.c===focusT;if(ratio<(liberate?1.1:(isF?1.2:pressed?2:1.4)*docK))continue;let sc=ratio+tg.vp/8*(doc==='attack'?2:1)+(liberate?2:0);if(focusT&&R2.c===focusT)sc*=1.6;if(S.nat[R2.c]&&S.nat[R2.c].cap===t)sc*=1.5;plans.push({t,sc,arms,dp,ratio});}
       plans.sort((x,y)=>y.sc-x.sc);const used=new Set();
       for(const p of plans){const arms=p.arms.filter(a=>!used.has(a.id));if(!arms.length)continue;
-        if(p.empty){arms.sort((x,y)=>divs(x)-divs(y));const a=arms[0];const others=defAt(a.r)-unitPow(a,'def');if(others<threat.get(a.r)*0.3&&divs(a)>=2){const b=splitArmy(a);if(b){b.path=[p.t];used.add(b.id);continue;}}a.path=[p.t];used.add(a.id);continue;}
+        if(p.empty){arms.sort((x,y)=>divs(x)-divs(y));const a=arms[0];const others=defAt(a.r)-unitPow(a,'def');if(others<threat.get(a.r)*(doc==='occupy'?0.12:0.3)&&divs(a)>=2){const b=splitArmy(a);if(b){b.path=[p.t];used.add(b.id);continue;}}a.path=[p.t];used.add(a.id);continue;}
         let got=0;const need=p.dp*1.4;let tdiv=0;const tcap=capAt(p.t);arms.sort((x,y)=>unitPow(y,'atk')-unitPow(x,'atk'));
         for(const a of arms){if(got>=need*1.3||tdiv+divs(a)>tcap*1.2)break;tdiv+=divs(a);const leftBehind=defAt(a.r)-unitPow(a,'def');const hold=(threat.get(a.r)-(hostPow.get(p.t)||0))*0.4;
           if(leftBehind<hold&&divs(a)>=4){const b=splitArmy(a);if(b){b.path=[p.t];used.add(b.id);got+=unitPow(b,'atk');continue;}}
@@ -2342,12 +2345,12 @@ function homeZones_(tag){const zs=new Map();for(let i=0;i<S.reg.length;i++){cons
 function aiMergeFleets(tag){const by=new Map();for(const f of S.fleets){if(f.ctl!==tag||f.path.length||f.tag!==tag)continue;const k=(f.p>=0?'p'+f.p:'z'+f.z)+'|'+(shipCount(f,true)===0?'s':'n');if(!by.has(k))by.set(k,[]);by.get(k).push(f);}
   for(const list of by.values()){if(list.length<2)continue;const into=list.sort((x,y)=>shipCount(y)-shipCount(x))[0];for(const f of list.slice(1)){const c1=shipCount(into),c2=shipCount(f);if(!c2){S.fleets.splice(S.fleets.indexOf(f),1);continue;}for(const t of SHIP_TYPES)into.sh[t]=(into.sh[t]||0)+(f.sh[t]||0);into.str=(into.str*c1+f.str*c2)/(c1+c2);into.org=Math.min(into.org,f.org);S.fleets.splice(S.fleets.indexOf(f),1);}}}
 function enemyNavy(tag){let pow=0,subs=0,cap=0;for(const f of S.fleets){if(!atWar(tag,f.tag))continue;pow+=fleetPow(f);subs+=f.sh.sub||0;cap+=(f.sh.cap||0)+(f.sh.car||0);}return {pow,subs,cap};}
-function aiNavy(tag){const N=S.nat[tag];const war=inWar(tag);const names=SHIP_NAMES[S.era];
+function aiNavy(tag){const N=S.nat[tag];const war=inWar(tag);const names=SHIP_NAMES[S.era];const nd=!N.ai&&N.auto&&N.auto.navd||'bal';const eng=nd==='attack'?1.1:nd==='defend'?1.6:1.35;
   // Produktion: passt sich dem Gegner an (viele U-Boote -> Zerstörer, überlegene Schlachtflotte -> U-Boote/Träger)
   const docks=docksOf(tag);const EN=war?enemyNavy(tag):null;const my=navPow(tag);
   if(docks>0&&N.nq.length<(N.major?3:1)){let mix=(AI_SHIPMIX[S.era]||[]).filter(([t])=>names[t]).map(([t,w])=>[t,w]);
     if(EN){const myDes=S.fleets.reduce((s,f)=>s+(f.tag===tag?(f.sh.des||0):0),0);for(const m of mix){if(m[0]==='des'&&EN.subs>myDes*0.5)m[1]*=2.2;if((m[0]==='sub'||m[0]==='car')&&EN.pow>my*1.3)m[1]*=1.8;if(m[0]==='cap'&&EN.pow>my*2)m[1]*=0.4;}}
-    if(!N.major)mix=mix.filter(([t])=>t==='des'||t==='sub'||t==='cru');if(mix.length)N.nq.push({t:pickWeighted(mix),p:0});}
+    if(!N.major&&N.ai)mix=mix.filter(([t])=>t==='des'||t==='sub'||t==='cru');for(const m of mix){if(nd==='raid'&&m[0]==='sub')m[1]*=3;if(nd==='escort'&&m[0]==='des')m[1]*=2.5;if(nd==='attack'&&(m[0]==='cap'||m[0]==='car'))m[1]*=1.8;if(nd==='defend'&&(m[0]==='des'||m[0]==='cru'))m[1]*=1.5;}if(mix.length)N.nq.push({t:pickWeighted(mix),p:0});}
   if(rng()<0.03&&!war){const coast=ownedCtrl(tag).filter(i=>canBuild(tag,'dock',i));if(coast.length&&docks<Math.max(2,(S._C?S._C.civ[tag]:civOf(tag))/6)&&N.bq.length<4)N.bq.push({t:'dock',r:coast[0],p:0});}
   if((S.day+tag.length)%12===0)aiMergeFleets(tag);
   const fl=S.fleets.filter(f=>f.ctl===tag);if(!fl.length)return;
@@ -2355,13 +2358,13 @@ function aiNavy(tag){const N=S.nat[tag];const war=inWar(tag);const names=SHIP_NA
   if(!war){for(const f of fl){if(f.p<0&&!f.path.length&&f.goPort<0)sendHome(f);}return;}
   const enemies=[...enemiesOf(tag)];const surf=fl.filter(f=>shipCount(f,true)>0);const main=surf.slice().sort((x,y)=>fleetPow(y)-fleetPow(x))[0];
   // Seeherrschaft: bei klarer Überlegenheit die wichtigste feindliche Küste blockieren
-  let blockZ=-1;if(main&&EN&&my>EN.pow*1.5&&fleetPow(main)>EN.pow*0.6){let bs=0;for(const e of enemies){for(const [z,w] of homeZones(e)){const [F,E]=seaPower(tag,z);if(E>fleetPow(main)*0.8)continue;const sc=w/(1+(main.z>=0?zdist(main.z,z):3)*0.05);if(sc>bs){bs=sc;blockZ=z;}}}}
+  let blockZ=-1;if(nd!=='defend'&&nd!=='escort'&&main&&EN&&my>EN.pow*(nd==='attack'?1.1:1.5)&&fleetPow(main)>EN.pow*(nd==='attack'?0.45:0.6)){let bs=0;for(const e of enemies){for(const [z,w] of homeZones(e)){const [F,E]=seaPower(tag,z);if(E>fleetPow(main)*0.8)continue;const sc=w/(1+(main.z>=0?zdist(main.z,z):3)*0.05);if(sc>bs){bs=sc;blockZ=z;}}}}
   // Geleitschutz: Heimatzonen mit feindlichen U-Booten
   let convZ=-1,cs=0;for(const [z,w] of home){let subs=0;for(const g of S.fleets)if(g.z===z&&atWar(tag,g.tag))subs+=g.sh.sub||0;if(subs>0&&w*subs>cs){cs=w*subs;convZ=z;}}
   for(const f of fl){if(f.path.length)continue;
     if(f.str<0.5||f.org<0.3){if(f.p<0&&f.goPort<0)sendHome(f);continue;}
     if(f.p>=0&&(f.str<0.85||f.org<0.7))continue;
-    const subOnly=shipCount(f,true)===0;
+    const subOnly=shipCount(f,true)===0||(nd==='raid'&&(f.sh.cap||0)+(f.sh.car||0)===0&&f!==main);
     if(subOnly){ // Handelskrieg gegen schwach geschützte feindliche Küsten
       let best=-1,bs=-1;for(const e of enemies){const hz=homeZones(e);for(const [z,w] of hz){let esc=0;for(const g of S.fleets)if(g.z===z&&friendly(e,g.tag))esc+=(g.sh.des||0)+(g.sh.cru||0)*0.5;const sc=w/(1+esc*0.6)-(f.z>=0?zdist(f.z,z)*0.05:0);if(sc>bs){bs=sc;best=z;}}}
       if(best>=0&&best!==f.z){fleetOrder(f,{z:best});f.mis='raid';}else if(f.z>=0)f.mis='raid';continue;}
@@ -2369,10 +2372,10 @@ function aiNavy(tag){const N=S.nat[tag];const war=inWar(tag);const names=SHIP_NA
     // kleine Überwassergruppen zur Hauptflotte führen (Konzentration der Kräfte)
     if(main&&f!==main&&myP<fleetPow(main)*0.35&&(f.sh.des||0)<shipCount(f)*0.7){const tp=main.p>=0?{p:main.p}:{z:main.z};if((tp.p!=null&&tp.p!==f.p)||(tp.z!=null&&tp.z!==f.z)){fleetOrder(f,tp);f.mis='patrol';}continue;}
     // Zerstörergruppen: Geleitschutz
-    if(convZ>=0&&(f.sh.des||0)>=shipCount(f)*0.6){if(convZ!==f.z){fleetOrder(f,{z:convZ});}f.mis='patrol';continue;}
+    if(convZ>=0&&((f.sh.des||0)>=shipCount(f)*0.6||(nd==='escort'&&f!==main))){if(convZ!==f.z){fleetOrder(f,{z:convZ});}f.mis='patrol';continue;}
     // Angriff auf schwächere feindliche Flotten in Reichweite – nie auf gut Glück
     let target=-1,ts=0;
-    for(const g of S.fleets){if(g.z<0||g.p>=0||!atWar(tag,g.tag))continue;const [F,E]=seaPower(tag,g.z);if(F+myP>E*1.35){const sc=(home.get(g.z)||0.6)*fleetPow(g)/(1+(f.z>=0?zdist(f.z,g.z):3)*0.2);if(sc>ts){ts=sc;target=g.z;}}}
+    for(const g of S.fleets){if(g.z<0||g.p>=0||!atWar(tag,g.tag))continue;if(nd==='defend'&&!home.has(g.z))continue;const [F,E]=seaPower(tag,g.z);if(F+myP>E*eng){const sc=(home.get(g.z)||0.6)*fleetPow(g)/(1+(f.z>=0?zdist(f.z,g.z):3)*0.2);if(sc>ts){ts=sc;target=g.z;}}}
     if(target>=0){if(target!==f.z)fleetOrder(f,{z:target});f.mis='patrol';continue;}
     if(f===main&&blockZ>=0){if(blockZ!==f.z)fleetOrder(f,{z:blockZ});f.mis='patrol';continue;}
     // sonst die wertvollste bedrohte Heimatzone sichern
@@ -2384,7 +2387,9 @@ function airAt(tag,r){const M=S._air&&S._air[r];let F=0,E=0;if(M)for(const t in 
 function aiAir(tag){const N=S.nat[tag];if(!ERAS[S.era].air)return;const war=inWar(tag);
   // Geschwader aufstellen – Mischung je nach Lage (feindliche Bomber -> mehr Jäger)
   let enBom=0,enAll=0;if(war)for(const w of S.wings){if(atWar(tag,w.tag)){enAll+=w.n;if(w.ty==='bom')enBom+=w.n;}}
-  const mix=N.major?[['fig',0.45+(enAll>0?0.1:0)+(enBom>0?0.1:0)],['cas',0.32],['bom',0.23]]:[['fig',0.6],['cas',0.4]];let guard=0;
+  const ad=!N.ai&&N.auto&&N.auto.aird||'bal';
+  let mix=N.major||!N.ai?[['fig',0.45+(enAll>0?0.1:0)+(enBom>0?0.1:0)],['cas',0.32],['bom',0.23]]:[['fig',0.6],['cas',0.4]];
+  const AW={sup:{fig:2.2},cas:{cas:2.2},bomb:{bom:2.5,fig:1.2},def:{fig:2,bom:0.3}}[ad];if(AW)mix=mix.map(([t,w])=>[t,w*(AW[t]||0.7)]);let guard=0;
   const nW=S.wings.reduce((c,w)=>c+(w.tag===tag?1:0),0);const wCap=6+Math.floor(milOf(tag)/3);if(nW>=wCap){N.planes=Math.min(N.planes,4000);}
   while(nW<wCap&&N.planes>=70&&guard++<4){const ty=pickWeighted(mix);const n=Math.min(100,Math.floor(N.planes/WINGS[ty].cost));if(n<40)break;newWing(tag,ty,n);N.planes-=n*WINGS[ty].cost;}
   const ws=S.wings.filter(w=>w.ctl===tag);if(!ws.length)return;
@@ -2398,21 +2403,26 @@ function aiAir(tag){const N=S.nat[tag];if(!ERAS[S.era].air)return;const war=inWa
   // Luftlage je Front: wo der Feind die Luft beherrscht, zuerst Jäger hin
   const need=front.slice(0,5).map(f=>{const [F,E]=airAt(tag,f.r);return {r:f.r,w:f.w,F,E,gap:E-F};}).sort((a,b)=>b.gap-a.gap||b.w-a.w);
   // Heimatschutz gegen feindliche Bomber: wertvollste eigene Industrie-Region
-  let homeR=-1;if(enBom>0){let hv=0;for(let i=0;i<S.reg.length;i++){const R=S.reg[i];if(R.c!==tag)continue;const v=R.civ+R.mil*1.3;const [F,E]=airAt(tag,i);if(v+E*0.01>hv){hv=v+E*0.01;homeR=i;}}}
+  let homeR=-1;if(enBom>0||ad==='def'){let hv=0;for(let i=0;i<S.reg.length;i++){const R=S.reg[i];if(R.c!==tag)continue;const v=R.civ+R.mil*1.3;const [F,E]=airAt(tag,i);if(v+E*0.01>hv){hv=v+E*0.01;homeR=i;}}}
   // Bombenziele: viel Industrie, wenig feindliche Jäger
   const bt=[];for(let i=0;i<S.reg.length;i++){const R=S.reg[i];if(!atWar(tag,R.c))continue;const v=R.civ+R.mil*1.3+(R.dock||0);if(v<2)continue;const [F,E]=airAt(tag,i);bt.push({r:i,v:v/(1+Math.max(0,E-F)*0.004)});}bt.sort((a,b)=>b.v-a.v);
   // Seeziele: feindliche Flotten vor eigenen Küsten oder bei eigenen Flotten
   const home=homeZones(tag);let nz=-1,nv=0;for(const f of S.fleets){if(f.z<0||f.p>=0||!atWar(tag,f.tag))continue;let near=home.has(f.z)?2:0.4;for(const g of S.fleets)if(g.z===f.z&&friendly(tag,g.tag))near+=1.5;const v=fleetPow(f)*near;if(v>nv){nv=v;nz=f.z;}}
   let fi=0,ci=0,bi=0,homeSet=false;
   const figs=ws.filter(w=>w.ty==='fig').sort((a,b)=>b.n-a.n);
+  const bombT=ad==='bomb'?bt.slice(0,3):null;let ei=0;
   for(const w of figs){if(w.n<25){w.mis='none';w.tr=N.cap;w.tz=-1;continue;}
+    if(ad==='def'){const r=homeR>=0&&!homeSet?homeR:(front.find(f=>S.reg[f.r].o===tag)||front[0]||{r:N.cap}).r;homeSet=true;w.mis='air';w.tr=r;w.tz=-1;if(wingBase(w)<0){w.tr=N.cap;}continue;}
+    if(bombT&&bombT.length&&ei<Math.ceil(figs.length/2)){const t=bombT[ei++%bombT.length];w.mis='air';w.tr=t.r;w.tz=-1;if(wingBase(w)>=0)continue;}
+    if(ad==='cas'&&front[fi%Math.max(1,Math.min(front.length,3))]){const t=front[fi++%Math.max(1,Math.min(front.length,3))];w.mis='air';w.tr=t.r;w.tz=-1;if(wingBase(w)>=0)continue;}
     if(homeR>=0&&!homeSet&&figs.length>2){w.mis='air';w.tr=homeR;w.tz=-1;homeSet=true;if(wingBase(w)>=0)continue;}
     const t=need[fi++%Math.max(1,need.length)]||front[0];if(t){w.mis='air';w.tr=t.r;w.tz=-1;}
     if(wingBase(w)<0){w.mis='air';w.tr=N.cap;w.tz=-1;}}
   for(const w of ws){if(w.ty==='fig')continue;if(w.n<25){w.mis='none';w.tr=N.cap;w.tz=-1;continue;}
     if(w.ty==='cas'){if(nz>=0&&ci===0&&nv>6){w.mis='naval';w.tz=nz;w.tr=-1;ci++;if(wingBase(w)>=0)continue;}
       // Luftnahunterstützung nur, wo wir die Luft nicht klar verlieren
-      const ok=front.filter(f=>{const [F,E]=airAt(tag,f.r);return E<=F*1.6+30;});const t=(ok.length?ok:front)[ci++%Math.max(1,Math.min((ok.length?ok:front).length,3))];if(t){w.mis='cas';w.tr=t.r;w.tz=-1;}}
+      const ok=front.filter(f=>{const [F,E]=airAt(tag,f.r);if(ad==='def'&&S.reg[f.r].o!==tag&&!G.adj[f.r].some(e=>S.reg[e.r].o===tag))return false;return E<=F*(ad==='sup'?1:ad==='cas'?2.2:1.6)+30;});const t=(ok.length?ok:front)[ci++%Math.max(1,Math.min((ok.length?ok:front).length,3))];if(t){w.mis='cas';w.tr=t.r;w.tz=-1;}}
+    else if(w.ty==='bom'&&ad==='def'){w.mis='naval';w.tz=nz;w.tr=-1;if(nz<0||wingBase(w)<0){w.mis='cas';w.tr=(front[0]||{r:N.cap}).r;w.tz=-1;}}
     else if(w.ty==='bom'){let placed=false;for(let k=0;k<bt.length&&k<12;k++){const t=bt[(bi+k)%bt.length];w.mis='bomb';w.tr=t.r;w.tz=-1;if(wingBase(w)>=0){placed=true;bi++;break;}}
       if(!placed){if(nz>=0){w.mis='naval';w.tz=nz;w.tr=-1;placed=wingBase(w)>=0;}if(!placed&&front[0]){w.mis='cas';w.tr=front[0].r;w.tz=-1;}}}
     if(wingBase(w)<0){w.mis='none';w.tr=N.cap;w.tz=-1;}}
@@ -2490,7 +2500,10 @@ function applyCmd_(tag,c){const N=S.nat[tag];if(!N||!N.alive)return {ok:false,ms
   case 'law':{const [law,idx]=a;const L=LAWS[law];if(!L||!L.opts[idx])return {ok:false};const o=L.opts[idx];if(N.laws[law]===idx)return {ok:false,msg:'Bereits aktiv'};
     if(N.ws<(o.req||0))return {ok:false,msg:'Benötigt '+Math.round(o.req*100)+' % Kriegsunterstützung'};if(N.pp<o.cost)return {ok:false,msg:'Zu wenig Politische Macht'};
     N.pp-=o.cost;N.laws[law]=idx;return {ok:true,msg:L.n+': '+o.n};}
-  case 'auto':{const [k,v]=a;N.auto=N.auto||{};if(k==='stance'){N.auto.stance=v==='defend'?'defend':'attack';return {ok:true};}
+  case 'auto':{const [k,v]=a;N.auto=N.auto||{};
+    const DOC={stance:['bal','occupy','attack','defend'],navd:['bal','attack','defend','raid','escort'],aird:['bal','sup','cas','bomb','def'],recd:['bal','inf','mob','art']};
+    if(DOC[k]){if(!DOC[k].includes(v))return {ok:false};N.auto[k]=v;return {ok:true};}
+    if(k==='tgt'){N.auto.tgt=v&&S.nat[v]?v:null;return {ok:true};}
     if(k==='all'){for(const x of AUTO_KEYS)N.auto[x]=!!(v&&v[x]);return {ok:true};}
     if(!AUTO_KEYS.includes(k))return {ok:false};N.auto[k]=!!v;return {ok:true};}
   case 'colonize':{if(!S.cfg.build)return {ok:false,msg:'Nur im Aufbau-Modus'};return colonize(tag,a[0]);}
@@ -4363,7 +4376,20 @@ function autoBar(keys){const A=myAuto();const box=h('div',{class:'autobar'});
   const btns=h('div',{class:'autobtns'});
   for(const k of keys){if(k==='air'&&!ERAS[S.era].air)continue;btns.appendChild(h('button',{class:'auto'+(A[k]?' on':''),title:'Die KI übernimmt '+AUTO_LBL[k],onclick:()=>{cmd(['auto',k,!A[k]],true);if(NET.mode==='client'){(S.nat[UI.me].auto=S.nat[UI.me].auto||{})[k]=!A[k];}refreshPanel(true);updateAutoRail();}},h('span',{class:'sw'}),'KI: '+AUTO_LBL[k]));}
   box.appendChild(btns);
-  if(keys.includes('arm')&&A.arm){box.appendChild(h('div',{class:'seg'},...[['attack','Offensiv'],['defend','Defensiv']].map(([v,t])=>h('button',{class:(A.stance||'attack')===v?'on':'',onclick:()=>{cmd(['auto','stance',v],true);if(NET.mode==='client')S.nat[UI.me].auto.stance=v;refreshPanel(true);}},t))));}
+  const docSeg=(key,label,opts,cur,hints)=>{const c=cur||'bal';box.appendChild(h('div',{class:'label',style:'margin-top:4px'},label));
+    box.appendChild(h('div',{class:'seg'},...opts.map(([v,t])=>h('button',{class:c===v?'on':'',title:hints[v]||'',onclick:()=>{cmd(['auto',key,v],true);if(NET.mode==='client'){const N=S.nat[UI.me];N.auto=N.auto||{};N.auto[key]=v;}refreshPanel(true);}},t))));
+    if(hints[c])box.appendChild(h('div',{class:'hint'},hints[c]));};
+  if(keys.includes('rec')&&A.rec)docSeg('recd','Schwerpunkt Rekrutierung',[['bal','Ausgewogen'],['inf','Masse'],['mob','Mobil'],['art','Artillerie']],A.recd,
+    {bal:'Gemischte Divisionen wie bisher.',inf:'Viele günstige Infanteriedivisionen – ideal zum Halten langer Fronten.',mob:'Schwerpunkt auf '+ERAS[S.era].units.mob+' für schnelle Durchbrüche.',art:'Mehr '+ERAS[S.era].units.art+' – stark gegen Festungen und in der Verteidigung.'});
+  if(keys.includes('arm')&&A.arm){const cur=A.stance==='attack'||A.stance==='defend'||A.stance==='occupy'?A.stance:'bal';
+    docSeg('stance','Schwerpunkt Armee',[['bal','Ausgewogen'],['occupy','Besetzen'],['attack','Offensiv'],['defend','Defensiv']],cur,
+      {bal:'Greift an, wo die Übermacht reicht, und hält die Front.',occupy:'Verteilt sich und nimmt möglichst viele unverteidigte Regionen ein.',attack:'Greift schon bei knapper Überlegenheit an und stößt auf Hauptstädte und Siegpunkte vor.',defend:'Hält die Front, greift nur zur Rückeroberung eigener Gebiete an.'});
+    const en=[...enemiesOf(UI.me)].filter(t=>S.nat[t]&&S.nat[t].alive);if(en.length){box.appendChild(h('div',{class:'label',style:'margin-top:4px'},'Hauptgegner'));
+      box.appendChild(h('div',{class:'opts'},h('button',{class:'small'+(!A.tgt?' on':''),onclick:()=>{cmd(['auto','tgt',null],true);if(NET.mode==='client')S.nat[UI.me].auto.tgt=null;refreshPanel(true);}},'Frei'),...en.slice(0,8).map(t=>h('button',{class:'small'+(A.tgt===t?' on':''),onclick:()=>{cmd(['auto','tgt',t],true);if(NET.mode==='client')S.nat[UI.me].auto.tgt=t;refreshPanel(true);}},flagEl(t,16,10),' '+shortName(S.nat[t])))));}}
+  if(keys.includes('nav')&&A.nav)docSeg('navd','Schwerpunkt Marine',[['bal','Ausgewogen'],['attack','Offensiv'],['defend','Küstenschutz'],['raid','Handelskrieg'],['escort','Geleitschutz']],A.navd,
+    {bal:'Greift schwächere Flotten an, blockiert bei klarer Überlegenheit und schützt die Küsten.',attack:'Sucht die Entscheidungsschlacht und blockiert feindliche Häfen – baut mehr Großkampfschiffe.',defend:'Bleibt vor den eigenen Küsten und kämpft nur dort.',raid:'U-Boote und leichte Verbände greifen feindliche Handelswege an.',escort:'Zerstörer schützen die eigenen Nachschubwege gegen U-Boote.'});
+  if(keys.includes('air')&&A.air&&ERAS[S.era].air)docSeg('aird','Schwerpunkt Luftwaffe',[['bal','Ausgewogen'],['sup','Luftüberlegenheit'],['cas','Bodenunterstützung'],['bomb','Bombenkrieg'],['def','Heimatschutz']],A.aird,
+    {bal:'Jäger dort, wo der Feind die Luft beherrscht, Schlachtflieger an der Front, Bomber gegen Industrie.',sup:'Mehr Jäger – erst den Himmel freikämpfen, dann angreifen.',cas:'Schlachtflieger unterstützen die Armee, Jäger geben Deckung an denselben Fronten.',bomb:'Bomber zerstören feindliche Industrie, Jäger begleiten sie.',def:'Jäger schützen Industrie und Hauptstadt, Flieger verteidigen eigenes Gebiet.'});
   if(keys.some(k=>A[k]))box.appendChild(h('div',{class:'hint'},keys.includes('arm')&&A.arm?'Die KI führt deine Armeen. Einheiten, denen du selbst Befehle gibst, bleiben 30 Tage unter deinem Kommando.':'Die KI kümmert sich um diesen Bereich. Du kannst trotzdem jederzeit selbst eingreifen.'));
   return box;}
 function autoPresetBox(){const A=myAuto();const box=h('div',{class:'item'},h('div',{class:'row'},h('span',{class:'label grow'},'Automatisierung'),h('span',{class:'muted'},Object.keys(AUTO_LBL).filter(k=>A[k]).length+' von '+Object.keys(AUTO_LBL).length+' Bereichen')));
@@ -4902,7 +4928,7 @@ function showWarToasts(){if(!S||!UI.me)return;const me=UI.me;const L=S.log;UI.se
   if(UI.seenLog.size>600)UI.seenLog=new Set([...UI.seenLog].slice(-300));
   for(const l of fresh.reverse()){if(l.d<S.day-5)continue;const mine=l.t.includes(me);let kind=null;
     if(l.k==='w'){if(mine)kind='war';else if(/kapituliert/.test(l.m)&&l.t.some(t=>S.nat[t]&&S.nat[t].major))kind='';else if(/Krieg|erklärt/.test(l.m)&&l.t.some(t=>t!==me&&S.nat[t]&&(friendly(me,t)||atWar(me,t)))&&l.t.some(t=>S.nat[t]&&S.nat[t].major))kind='';}
-    else if(l.k==='p'&&mine){kind=/vom Stapel|kauft .* von uns|zuerst besiedelt|Neue Kolonie/.test(l.m)?null:'ok';}
+    else if(l.k==='p'&&mine){const A=(S.nat[me]&&S.nat[me].auto)||{};kind=/vom Stapel|kauft .* von uns|zuerst besiedelt|Neue Kolonie/.test(l.m)||(A.arm&&/Kein Durchgang|Meerenge/.test(l.m))?null:'ok';}
     else if(l.k==='d'&&mine)kind='';
     if(kind!==null)notify(l.m,kind);else if(mine||l.k==='w'){UI.unread=(UI.unread||0)+1;markLog();}}}
 function markLog(){const b=document.getElementById('rb_log');if(!b)return;let d=b.querySelector('.dot');if(UI.unread>0&&UI.panel!=='log'){if(!d){d=document.createElement('i');d.className='dot';b.appendChild(d);}}else{UI.unread=0;if(d)d.remove();}}
