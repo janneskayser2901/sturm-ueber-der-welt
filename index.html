@@ -2608,7 +2608,7 @@ function buildTerrainTexture(){bucketIndex();
   c.scale(PX,PX);c.translate(M,M);paintTerrain(c,-M,-M,MAPW+M,MAPH+M,false);
   R_.tex=cv;R_.tilesL=[new Map(),new Map()];}
 // Gelände-Kacheln in zwei Detailstufen, LRU-Cache, Vorberechnung im Leerlauf
-const TL=[{T:24,PX:16,max:48},{T:12,PX:40,max:40}];
+const TL=[{T:24,PX:16,max:40},{T:12,PX:40,max:32}];
 function tileLevel(s){return s<30?0:1;}
 function tileHasLand(L,i,j){const T=TL[L].T;const x0=i*T,y0=j*T,x1=x0+T,y1=y0+T;bucketIndex();if(hexesIn(x0,y0,x1,y1).length)return true;prepLandTiles();for(const ch of R_.coastCh){if(ch.x1<x0||ch.x0>x1||ch.y1<y0||ch.y0>y1)continue;return true;}return false;}
 function terrainTile(L,i,j){const {T,PX}=TL[L];const cv=document.createElement('canvas');cv.width=T*PX;cv.height=T*PX;const c=cv.getContext('2d');c.scale(PX,PX);c.translate(-i*T,-j*T);
@@ -2915,7 +2915,7 @@ function drawNavalAir(ctx,W,H,opts){const s=CAM.s,me=opts.me;const selF=opts.sel
 // Einfärben, Besatzungsstreifen, Grenzen und Niemandsland laufen danach als reine Pixel-Lookups.
 // Das ist in Safari/WebKit um Größenordnungen schneller als ständiges Neuzeichnen von Pfaden.
 const POLG_PX=8;                        // globales Raster (Übersicht)
-const PTL=[{T:24,PX:20,max:36},{T:12,PX:44,max:28}];   // Kacheln für Nah-Zoom
+const PTL=[{T:24,PX:18,max:28},{T:12,PX:38,max:22}];   // Kacheln für Nah-Zoom
 function idCheck(r,g){return (r*31+g*17+89)&255;}
 function idStyle(v){const r=v&255,g=(v>>8)&255;return `rgb(${r},${g},${idCheck(r,g)})`;}
 function freeCanvas(cv){if(cv&&cv.width){cv.width=0;cv.height=0;}}
@@ -2963,8 +2963,10 @@ function polPalette(mode,me){const n=S.reg.length;const P={fill:new Uint32Array(
   P.un[n]=1;P.ctl[n]=-4;P.realm[n]=-4;return P;}
 const HATCH_A=colU32('#6d6656'),HATCH_B=colU32('#8a826c'),BORDER=colU32('#16140e'),FRONT=colU32('#dc3c28');
 // Einfärben eines Rasterausschnitts (Pixelkoordinaten), optional mit Grenzen (nur globale Übersicht)
+// Kacheln teilen sich einen Pixelpuffer pro Größe (spart Speicher auf dem iPad); nur die Übersicht behält ihren eigenen
+const IMGPOOL=new Map();function sharedImg(w,h){const k=w+'x'+h;let im=IMGPOOL.get(k);if(!im){im=new ImageData(w,h);IMGPOOL.set(k,im);}return im;}
 function colorizeRaster(R,P,rx0,ry0,rx1,ry1,alphaF,borders){const {w,h,id,land,x0,y0,PX}=R;
-  if(!R.img)R.img=new ImageData(w,h);const o=new Uint32Array(R.img.data.buffer);const WASTE=S.reg.length;const aF=Math.round(alphaF*255);const inv=1/PX;
+  const img=R.img||sharedImg(w,h);const o=new Uint32Array(img.data.buffer);const WASTE=S.reg.length;const aF=Math.round(alphaF*255);const inv=1/PX;
   rx0=Math.max(0,rx0);ry0=Math.max(0,ry0);rx1=Math.min(w,rx1);ry1=Math.min(h,ry1);
   const stripe=PX*0.19,hatch=PX*0.23;
   for(let y=ry0;y<ry1;y++){const wy=y0*PX+y;for(let x=rx0;x<rx1;x++){const i=y*w+x;const L=land[i];const r=id[i];if(!L||r<0){o[i]=0;continue;}
@@ -2978,7 +2980,7 @@ function colorizeRaster(R,P,rx0,ry0,rx1,ry1,alphaF,borders){const {w,h,id,land,x
       o[i]=((((a*L)/255)|0)<<24|col)>>>0;}}}
 // ===== Übersicht (globales Raster) =====
 function ensureGlobalIds(){if(R_.gid&&R_.gidEra===S.era&&R_.gidN===S.reg.length)return;
-  R_.wasteHex=R_.waste||null;const t0=performance.now();R_.gid=renderIdRaster(0,0,MAPW,MAPH,POLG_PX,true);propagateIds(R_.gid,POLG_PX*9);R_.gidEra=S.era;R_.gidN=S.reg.length;R_.gpal=null;
+  R_.wasteHex=R_.waste||null;const t0=performance.now();R_.gid=renderIdRaster(0,0,MAPW,MAPH,POLG_PX,true);R_.gid.img=new ImageData(R_.gid.w,R_.gid.h);propagateIds(R_.gid,POLG_PX*9);R_.gidEra=S.era;R_.gidN=S.reg.length;R_.gpal=null;
   if(R_.ptiles)for(const m of R_.ptiles)for(const t of m.values())if(t&&t.cv)freeCanvas(t.cv);R_.ptiles=[new Map(),new Map()];R_.ptKey=null;R_.gidMs=performance.now()-t0;}
 function regionPixelBox(r,R,m){const I=R_.info[r];const PX=R.PX;return [Math.floor((I.x0-1.2-R.x0)*PX)-m,Math.floor((I.y0-1.2-R.y0)*PX)-m,Math.ceil((I.x1+1.2-R.x0)*PX)+m,Math.ceil((I.y1+1.2-R.y0)*PX)+m];}
 function drawPolitical(mode,me){
@@ -3000,7 +3002,7 @@ function drawPolitical(mode,me){
 // ===== Nah-Zoom-Kacheln =====
 function makePolTile(L,i,j){const {T,PX}=PTL[L];const x0=i*T,y0=j*T;const R=renderIdRaster(x0,y0,x0+T,y0+T,PX,false);fillTileGaps(R);
   const cv=document.createElement('canvas');cv.width=R.w;cv.height=R.h;return {R,cv,stale:true};}
-function paintPolTile(t){const P=R_.gpal;if(!P)return;colorizeRaster(t.R,P,0,0,t.R.w,t.R.h,1,false);t.cv.getContext('2d').putImageData(t.R.img,0,0);t.stale=false;}
+function paintPolTile(t){const P=R_.gpal;if(!P)return;colorizeRaster(t.R,P,0,0,t.R.w,t.R.h,1,false);t.cv.getContext('2d').putImageData(sharedImg(t.R.w,t.R.h),0,0);t.stale=false;}
 function drawPolTiles(ctx,W,H,mode,me,dpr){const s=CAM.s;const L=s<30?0:1;const {T,max}=PTL[L];const now=performance.now();
   if(!R_.ptiles)R_.ptiles=[new Map(),new Map()];const cache=R_.ptiles[L];const busy=now-(UI.lastInput||0)<250;const end=busy?0:now+10;
   const i0=Math.floor(CAM.x/T),i1=Math.floor((CAM.x+W/s)/T),j0=Math.floor(CAM.y/T),j1=Math.floor((CAM.y+H/s)/T);let missing=0;
@@ -3057,6 +3059,12 @@ function decodeState(js){const st=JSON.parse(js);
   relDirty();
   return {st,newEra:prevEra!==st.era};
 }
+// ----- Kompression: nativ (CompressionStream, asynchron) mit LZString als Rückfall -----
+const HAS_CS=typeof CompressionStream!=='undefined'&&typeof DecompressionStream!=='undefined';
+function u8ToB64(u){let s='';const CH=0x8000;for(let i=0;i<u.length;i+=CH)s+=String.fromCharCode.apply(null,u.subarray(i,i+CH));return btoa(s);}
+function b64ToU8(b){const s=atob(b);const u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u;}
+async function packState(js){if(HAS_CS){try{const cs=new CompressionStream('deflate-raw');const out=new Response(new Blob([js]).stream().pipeThrough(cs));return 'D:'+u8ToB64(new Uint8Array(await out.arrayBuffer()));}catch(e){}}return 'L:'+LZString.compressToBase64(js);}
+async function unpackState(z){if(z.startsWith('D:')){const ds=new DecompressionStream('deflate-raw');return await new Response(new Blob([b64ToU8(z.slice(2))]).stream().pipeThrough(ds)).text();}if(z.startsWith('L:'))return LZString.decompressFromBase64(z.slice(2));return LZString.decompressFromBase64(z);}
 // ----- host -----
 async function hostLobby(name,era){if(!NET.room)return false;const code=rnd4();NET.code=code;NET.isHost=true;NET.mode='host';NET.lobbyEra=era;NET.lobbyName=name;
   NET.lr=await NET.room.join(ROOM_PREFIX+code);NET.assign={};NET.started=false;
@@ -3096,7 +3104,7 @@ function setupLobbyRoom(){const lr=NET.lr;
   lr.on('st',msg=>{if(NET.isHost)return;const d=msg.data;if(!d||typeof d!=='object')return;if(msg.peer!==NET.hostPeer&&NET.hostPeer)return;
     if(d.id!==NET.snapId){NET.snapId=d.id;NET.chunks={};}NET.chunks[d.n]=d.d;
     if(Object.keys(NET.chunks).length===d.t){let s='';for(let i=0;i<d.t;i++)s+=NET.chunks[i]||'';NET.chunks={};
-      try{const js=LZString.decompressFromBase64(s);if(!js)return;const {st,newEra}=decodeState(js);NET.lastRecv=Date.now();onClientState(st,newEra);}catch(e){console.warn('decode',e);}}});
+      const seq=NET._rxSeq=(NET._rxSeq||0)+1;unpackState(s).then(js=>{if(!js||seq<(NET._appliedSeq||0))return;NET._appliedSeq=seq;const {st,newEra}=decodeState(js);NET.lastRecv=Date.now();onClientState(st,newEra);}).catch(e=>console.warn('decode',e));}});
 }
 function hostStart(){NET.started=true;const era=NET.lobbyEra;
   startGame(era,NET.myTag,{hist:UI.lobbyHist!==false,mp:true,cfg:gameCfg()});
@@ -3106,9 +3114,9 @@ function hostStart(){NET.started=true;const era=NET.lobbyEra;
 let lastSend=0;
 function hostMaybeSend(now){if(NET.mode!=='host'||!NET.started||!NET.lr)return;const iv=NET.paused||!S.speed?2500:1000;
   if(!NET.forceSend&&now-lastSend<iv)return;if(now-lastSend<250)return;lastSend=now;NET.forceSend=false;
-  let js;try{js=encodeState();}catch(e){console.warn(e);return;}const z=LZString.compressToBase64(js);const CH=3600;const t=Math.ceil(z.length/CH);NET.snapId=(NET.snapId+1)%100000;
-  for(let i=0;i<t;i++)NET.lr.emit('st',{id:NET.snapId,n:i,t,d:z.slice(i*CH,(i+1)*CH)}).catch(e=>{if(e&&e.code==='not_permitted'&&!NET.warned){NET.warned=true;UI.toast('Du darfst in diesem Artifact nicht hosten. Der Besitzer muss dir Mitwirkenden-Rechte geben oder selbst hosten.','bad');}});
-  NET.lastSize=z.length;}
+  if(NET._packing)return;let js;try{js=encodeState();}catch(e){console.warn(e);return;}NET._packing=true;
+  packState(js).then(z=>{NET._packing=false;if(!NET.lr)return;const CH=3600;const t=Math.ceil(z.length/CH);NET.snapId=(NET.snapId+1)%100000;
+  for(let i=0;i<t;i++)NET.lr.emit('st',{id:NET.snapId,n:i,t,d:z.slice(i*CH,(i+1)*CH)}).catch(e=>{if(e&&e.code==='not_permitted'&&!NET.warned){NET.warned=true;UI.toast('Du darfst in diesem Artifact nicht hosten. Der Besitzer muss dir Mitwirkenden-Rechte geben oder selbst hosten.','bad');}});NET.lastSize=z.length;},()=>{NET._packing=false;});}
 // ----- client -----
 function clientSend(cmd){NET.seq++;NET.cmdQueue.push([NET.seq,cmd]);if(NET.cmdQueue.length>20)NET.cmdQueue.shift();NET.lr.presence({cmds:NET.cmdQueue}).catch(()=>{});NET.pendingRes[NET.seq]=true;return NET.seq;}
 function onClientState(st,newEra){
