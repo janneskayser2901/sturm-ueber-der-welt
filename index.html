@@ -406,7 +406,7 @@ const NATIONS={
   ['ENG','Vereinigtes Königreich','#b3312f','D',1,20,8,16,'London',null,'uk'],
   ['AUS','Kaisertum Österreich','#e2d9b8','N',1,14,10,22,'Wien',null,'h:#000000,#f2c200'],
   ['RUS','Russisches Kaiserreich','#2f6b3a','N',1,16,12,40,'Leningrad',null,'h:#ffffff,#1c57a5,#d52b1e'],
-  ['PRU','Königreich Preußen','#3e3e3e','N',1,9,7,9,'Berlin',null,'h:#ffffff,#111111,#ffffff'],
+  ['PRU','Königreich Preußen','#3e3e3e','N',1,9,7,9,'Berlin',null,'h:#111111,#ffffff'],
   ['OTT','Osmanisches Reich','#6f9468','N',1,10,6,20,'Istanbul',null,'s:#c8102e'],
   ['SPA','Königreich Spanien','#d9b33a','N',0,8,4,11,'Madrid',null,'h:#c60b1e,#ffc400,#ffc400,#c60b1e'],
   ['POR','Königreich Portugal','#3c8a5a','N',0,2,1,3,'Lissabon',null,'v:#1f3a93,#ffffff'],
@@ -517,7 +517,7 @@ const NATIONS={
   ['TUR','Türkei','#b9a24a','D',0,7,4,29,'Ankara',null,'s:#e30a17'],
   ['CYP','Zypern','#c9a060','D',0,0,0,0.6,'Nikosia',null,'s:#ffffff'],
   ['EGY','Ägypten','#b8a060','N',0,5,3,27,'Kairo',null,'h:#ce1126,#ffffff,#000000'],
-  ['SYR','Syrien','#8a9a6a','N',0,2,1,5,'Damaskus',null,'h:#ce1126,#ffffff,#000000'],
+  ['SYR','Syrien','#8a9a6a','N',0,2,1,5,'Damaskus',null,'h:#007a3d,#ffffff,#000000'],
   ['LEB','Libanon','#5aa08a','D',0,1,0,2,'Beirut',null,'h:#ed1c24,#ffffff,#ed1c24'],
   ['ISR','Israel','#4a7ab8','D',0,3,2,2.3,'Jerusalem',null,'h:#ffffff,#0038b8,#ffffff'],
   ['JOR','Jordanien','#9a6a4a','N',0,1,0,1.7,'Amman',null,'h:#000000,#ffffff,#007a3d'],
@@ -762,7 +762,7 @@ BUILD.dock={n:'Werft',cost:5500};
 // [tag,name,color,ideo,major,civ,mil,popMillions,capitalCity,overlord,flag]
 NATIONS['1805'].push(
  ['USA','Vereinigte Staaten','#5b86b8','D',0,5,1,6,'Washington',null,'us'],
- ['HAI','Haiti','#3a4a8a','C',0,0,1,0.5,'Port-au-Prince',null,'h:#00209f,#d21034'],
+ ['HAI','Haiti','#3a4a8a','C',0,0,1,0.5,'Port-au-Prince',null,'v:#111111,#d21034'],
  ['QNG','Qing-Dynastie','#d6b95a','N',0,14,6,90,'Peking',null,'s:#f2c200;@#1f4fa0'],
  ['JAP','Tokugawa-Shogunat','#c9a9a0','N',0,5,2,25,'Tokio',null,'s:#ffffff;@#bc002d'],
  ['KOR','Joseon','#8fb0a0','N',0,2,0,8,'Seoul','QNG','s:#ffffff;@#c60c30'],
@@ -920,7 +920,7 @@ NATIONS['1962'].push(
  ['ETH','Äthiopien','#5a9a4a','N',0,1,1,22,'Addis Abeba',null,'h:#078930,#fcdd09,#da121a'],
  ['SOM','Somalia','#4a90d0','N',0,0,0,2.5,'Mogadischu',null,'s:#4189dd;*#ffffff'],
  ['UGA','Uganda','#8a8a3a','N',0,0,0,7,'Kampala',null,'h:#000000,#fcdc04,#d90000,#000000,#fcdc04,#d90000'],
- ['TAN','Tanganjika','#3a8a7a','N',0,0,0,10,'Daressalam',null,'s:#1eb53a'],
+ ['TAN','Tanganjika','#3a8a7a','N',0,0,0,10,'Daressalam',null,'h:#1eb53a,#111111,#1eb53a'],
  ['RWA','Ruanda','#6a9a4a','N',0,0,0,3,'Kigali',null,'v:#c8102e,#fad201,#009a44'],
  ['BRN','Burundi','#9a5a5a','N',0,0,0,3,'Usumbura',null,'s:#ce1126;@#ffffff'],
  ['COD','Kongo-Léopoldville','#7a6ab0','N',0,1,0,15,'Leopoldville',null,'s:#007fff;*#f7d618'],
@@ -1062,7 +1062,7 @@ function newGame(era,opts){
   }
   for(const tag in S.nat){const L=START_LAWS[era+'.'+tag];if(L)Object.assign(S.nat[tag].laws,L);}
   for(const tag in S.nat){const sp=SPIRITS[era+'.'+tag];if(sp){const N=S.nat[tag];N.spirit=sp.n;for(const k in sp.m){if(k==='stab'){N.stabB=(N.stabB||0)+sp.m[k];}else N.mods[k]=(N.mods[k]||0)+sp.m[k];}}}
-  for(const t in S.nat){const N=S.nat[t];if(N.ov)setOv(t,N.ov);}
+  for(const t in S.nat){const N=S.nat[t];if(N.ov)setOv(t,N.ov,true);} // historische Vasallen behalten ihren Namen
   S.fleets=[];S.wings=[];initNavy();initAir();
   S.tension=E.tension;relDirty();
   return S;
@@ -1087,8 +1087,8 @@ function mixCol(a,b,t){const p=x=>[parseInt(x.slice(1,3),16),parseInt(x.slice(3,
 function vassalName(N,ov){const base=N.n0||N.n;const O=S.nat[ov];if(!O)return base;const adj=ADJ[ov]||((O.n0||O.n).split(' ').slice(-1)[0]);
   if(base.startsWith(adj))return base;let land=LAND[N.tag];if(!land){land=base.replace(/^(Königreich|Kaiserreich|Kaisertum|Republik|Emirat|Großfürstentum|Kurfürstentum|Sultanat|Fürstentum|Herzogtum|Freistaat|Volksrepublik|Union|Föderation)( von| der)? /,'');if(land.split(' ').length>2)land=land.split(' ').slice(-1)[0];}
   return adj+'-'+land;}
-function setOv(tag,ov){const N=S.nat[tag];if(!N)return;if(N.n0===undefined)N.n0=N.n;if(N.col0===undefined)N.col0=N.col;N.ov=ov||null;
-  if(ov&&S.nat[ov]){const O=S.nat[ov];const oc=O.col0||O.col;N.col=mixCol(oc,'#ffffff',0.16);N.n=vassalName(N,ov);}else{N.n=N.n0;N.col=N.col0;}
+function setOv(tag,ov,keepName){const N=S.nat[tag];if(!N)return;if(N.n0===undefined)N.n0=N.n;if(N.col0===undefined)N.col0=N.col;N.ov=ov||null;
+  if(ov&&S.nat[ov]){const O=S.nat[ov];const oc=O.col0||O.col;N.col=mixCol(oc,'#ffffff',0.16);N.n=keepName?(N.n0||N.n):vassalName(N,ov);}else{N.n=N.n0;N.col=N.col0;}
   if(typeof R_!=='undefined'){R_.polDirty=true;R_.labelsDirty=true;}}
 // ===== relationships =====
 function root(tag){let t=tag,g=0;while(S.nat[t]&&S.nat[t].ov&&g<5){t=S.nat[t].ov;g++;}return t;}
@@ -2944,7 +2944,7 @@ function myPeerLabel(){if(!NET.lr)return null;const me=NET.lr.peers().find(p=>p.
 // ===== UI =====
 const UI={cfg:{skirmish:false,noFocus:false,noEnd:false,ai:'normal',war:'free',win:'none',rounds:10},chatOpen:false,screen:'menu',panel:null,selRegion:-1,hover:-1,selArmies:new Set(),selFleets:new Set(),selWing:null,wingMis:null,mode:'pol',me:null,lobbyHist:true,multi:false,dirty:true,lastPanel:0,natView:null,infoKind:null,toastQ:[]};
 const $=(s,r=document)=>r.querySelector(s);
-function h(tag,attrs,...kids){const el=document.createElement(tag);if(attrs)for(const k in attrs){const v=attrs[k];if(v==null||v===false)continue;if(k==='class')el.className=v;else if(k==='style')el.style.cssText=v;else if(k.startsWith('on'))el.addEventListener(k.slice(2),v);else if(k==='html')el.innerHTML=v;else el.setAttribute(k,v===true?'':v);}
+function h(tag,attrs,...kids){const el=document.createElement(tag);if(attrs)for(const k in attrs){const v=attrs[k];if(v==null||v===false)continue;if(k==='class')el.className=v;else if(k==='style')el.style.cssText=v;else if(k.startsWith('on')){const ev=k.slice(2);el.addEventListener(ev,v);(el._h||(el._h=[])).push([ev,v]);}else if(k==='html')el.innerHTML=v;else el.setAttribute(k,v===true?'':v);}
   for(const c of kids.flat()){if(c==null||c===false)continue;el.appendChild(typeof c==='string'||typeof c==='number'?document.createTextNode(String(c)):c);}return el;}
 const ICON={
  pol:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 21h16M6 18V9M10 18V9M14 18V9M18 18V9M3 9l9-6 9 6z"/></svg>',
@@ -3019,10 +3019,12 @@ function buildHelp(){const el=$('#helpS');el.innerHTML='';
 function buildEras(){const el=$('#eras');el.innerHTML='';
   const wrap=h('div',{class:'card era-wrap'},h('div',{class:'era-head'},h('h2',null,UI.mpFlow?'Epoche für die Lobby':'Wähle eine Epoche'),h('button',{onclick:()=>show(UI.mpFlow?'mp':'menu')},'Zurück')));
   const grid=h('div',{class:'eras'});
+  const CHIPN={OTT:'Osmanisches Reich',ENG:'Großbritannien',GBR:'Großbritannien',UK:'Großbritannien',USA:'USA',SOV:'Sowjetunion',GER:'Deutschland',FRG:'BRD',DDR:'DDR',GDR:'DDR',PRC:'China',JAP:'Japan'};
+  const eraChipName=(k,t)=>{if(CHIPN[t])return CHIPN[t];if(typeof LAND!=='undefined'&&LAND[t])return LAND[t];const n=NATIONS[k].find(x=>x[0]===t)[1];const w=n.split(' ').filter(x=>!/^(Reich|Königreich|Kaiserreich|Kaisertum|Republik|Vereinigtes|Vereinigte|Staaten|von|der|des|Deutsches|Russisches|Französisches|Osmanisches|Britisches)$/.test(x));return w.length?w.join(' '):n;};
   for(const k of Object.keys(ERAS)){const E=ERAS[k];const majors=NATIONS[k].filter(n=>n[4]).map(n=>n[0]);
     grid.appendChild(h('button',{class:'card era',onclick:()=>{if(UI.mpFlow){UI.lobbyEraPick=k;openCreateLobby2();}else openPick(k);}},
       h('div',{class:'yr'},E.short),h('div',{class:'nm'},E.name),h('p',null,E.blurb),
-      h('div',{class:'tags'},...majors.map(t=>h('span',{class:'chip'},NATIONS[k].find(n=>n[0]===t)[1].replace(/^(Königreich|Kaisertum|Russisches|Deutsches|Französisches|Französische|Osmanisches|Britisches|Vereinigtes) /,''))))));}
+      h('div',{class:'tags'},...majors.map(t=>h('span',{class:'chip'},eraChipName(k,t))))));}
   wrap.appendChild(grid);el.appendChild(wrap);}
 // ----- nation pick (singleplayer) -----
 function openPick(era){show('loading');setTimeout(()=>{
@@ -3109,11 +3111,21 @@ function setSpeed(i){if(!isAuthority()||cfg().blitz)return;S.speed=i;if(NET.mode
 function openPanel(k){if(UI.panel===k)k=null;UI.panel=k;document.querySelectorAll('.rail button').forEach(b=>b.classList.toggle('on',b.id==='rb_'+k));
   const p=$('#panel');if(!k){p.classList.add('hidden');return;}p.classList.remove('hidden');if(k!=='dip')UI.natView=null;refreshPanel(true);}
 const PANEL_T={rank:'Rangliste',nav:'Marine',air:'Luftwaffe',pol:'Politik',foc:'Nationaler Fokus',res:'Forschung',bld:'Bau',prd:'Produktion',arm:'Armee',dip:'Diplomatie',vas:'Vasallen',trd:'Handel',log:'Chronik'};
-function refreshPanel(force){if(!UI.panel||!S||!UI.me)return;const now=performance.now();if(!force&&now-UI.lastPanel<450)return;UI.lastPanel=now;
+function refreshPanel(force){if(!UI.panel||!S||!UI.me)return;const now=performance.now();if(!force&&(UI.panelHold||now-UI.lastPanel<(UI.panelHover?1600:450)))return;UI.lastPanel=now;
   const b=$('#panelB');if(!b)return;const scroll=b.scrollTop;const fsc=b.querySelector('.ftree');const fx=fsc?fsc.scrollLeft:0;
   const active=document.activeElement;if(active&&b.contains(active)&&(active.tagName==='INPUT'||active.tagName==='SELECT')&&!force)return;
   $('#panelT').textContent=UI.panel==='dip'&&UI.natView?natName(UI.natView):PANEL_T[UI.panel];
-  b.innerHTML='';const f=PANELS[UI.panel];if(f)f(b);b.scrollTop=scroll;const fs2=b.querySelector('.ftree');if(fs2)fs2.scrollLeft=fx;}
+  const f=PANELS[UI.panel];if(UI._morphFor!==UI.panel+'|'+(UI.natView||'')||force==='rebuild'){b.innerHTML='';if(f)f(b);UI._morphFor=UI.panel+'|'+(UI.natView||'');}else{const tmp=document.createElement('div');if(f)f(tmp);morphKids(b,tmp);}b.scrollTop=scroll;const fs2=b.querySelector('.ftree');if(fs2)fs2.scrollLeft=fx;}
+// DOM in place aktualisieren, damit Buttons unter dem Mauszeiger nicht ersetzt werden (Echtzeit)
+function morphNode(o,n){if(o.nodeType!==n.nodeType||o.nodeName!==n.nodeName||o.nodeName==='CANVAS'||o.nodeName==='svg'){o.replaceWith(n);return;}
+  if(o.nodeType===3){if(o.nodeValue!==n.nodeValue)o.nodeValue=n.nodeValue;return;}if(o.nodeType!==1){o.replaceWith(n);return;}
+  const oa=o.attributes,na=n.attributes;for(let i=oa.length-1;i>=0;i--){const a=oa[i].name;if(!n.hasAttribute(a))o.removeAttribute(a);}
+  for(let i=0;i<na.length;i++){const a=na[i];if(o.getAttribute(a.name)!==a.value)o.setAttribute(a.name,a.value);}
+  if(o._h)for(const [ev,fn] of o._h)o.removeEventListener(ev,fn);o._h=null;if(n._h){for(const [ev,fn] of n._h)o.addEventListener(ev,fn);o._h=n._h;}
+  morphKids(o,n);
+  if((o.nodeName==='INPUT'||o.nodeName==='TEXTAREA'||o.nodeName==='SELECT')&&document.activeElement!==o){if(o.value!==n.value)o.value=n.value;if(o.checked!==n.checked)o.checked=n.checked;}}
+function morphKids(o,n){const ok=[...o.childNodes],nk=[...n.childNodes];const L=Math.min(ok.length,nk.length);
+  for(let i=0;i<L;i++)morphNode(ok[i],nk[i]);for(let i=L;i<ok.length;i++)ok[i].remove();for(let i=L;i<nk.length;i++)o.appendChild(nk[i]);}
 const PANELS={};
 PANELS.pol=b=>{const t=UI.me,N=S.nat[t],E=ERAS[S.era];
   b.appendChild(h('div',{class:'nat-head'},flagEl(t,60,38),h('div',null,h('div',{class:'nn',style:'font-family:var(--display);font-size:22px'},N.n),h('div',{class:'muted'},'Regierung: '+E.ideo[N.ideo]+(N.spirit?' · '+N.spirit:'')))));
@@ -3351,8 +3363,7 @@ async function openMP(){show('mp');const el=$('#mp');el.innerHTML='';
   card.appendChild(h('div',{class:'row'},h('h2',{class:'grow',style:'color:var(--brass3);font-size:30px'},'Mehrspieler'),h('button',{onclick:()=>show('menu')},'Zurück')));
   card.appendChild(h('label',{class:'label',for:'nick'},'Dein Name'));
   card.appendChild(h('input',{id:'nick',value:NET.nick||'',maxlength:'20',placeholder:'Spielername',oninput:e=>{NET.nick=e.target.value.trim().slice(0,20);try{localStorage.setItem('sue_nick',NET.nick);}catch(x){}}}));
-  card.appendChild(h('div',{class:'sec-t',style:'margin-top:8px'},'Offene Lobbys'));
-  card.appendChild(h('div',{class:'lobby-list',id:'lobbyList'}));
+  if(!window.STANDALONE){card.appendChild(h('div',{class:'sec-t',style:'margin-top:8px'},'Offene Lobbys'));card.appendChild(h('div',{class:'lobby-list',id:'lobbyList'}));}else card.appendChild(h('div',{class:'sec-t',style:'margin-top:8px'},'Lobby beitreten'));
   card.appendChild(h('div',{class:'row'},h('input',{id:'joinCode',class:'grow',placeholder:'Lobby-Code',maxlength:'8'}),h('button',{onclick:()=>{const c=$('#joinCode').value.trim().toLowerCase();if(c)doJoin(c);}},'Beitreten')));
   card.appendChild(h('button',{class:'primary',onclick:()=>{if(!NET.nick)return toast('Bitte gib einen Namen ein','bad');UI.mpFlow=true;buildEras();show('eras');}},'Neue Lobby erstellen'));
   card.appendChild(h('div',{class:'hint'},window.STANDALONE?'Erstelle eine Lobby und schick den Einladungslink – Freunde öffnen ihn einfach im Browser, ohne Anmeldung. Wer die Lobby erstellt, ist Host: Auf seinem Gerät läuft die Simulation, lass den Tab offen.':'Freunde brauchen Zugriff auf dieses Artifact (Teilen-Menü in claude.ai) und müssen angemeldet sein. Wer die Lobby erstellt, ist Host: Auf seinem Gerät läuft die Simulation.'));
@@ -3864,6 +3875,13 @@ function paintBtn(){const b=$('#paintBtn');if(b)b.classList.toggle('on',UI.paint
   if(box)box.remove();box=h('div',{class:'card evcard',id:'evCard','data-id':String(ev.id)},h('div',{class:'t'},ev.title),h('div',{class:'d'},ev.text),
     h('div',{class:'opts'},...ev.opts.map((o,i)=>h('button',{class:i===0?'primary':'',onclick:()=>{cmd(['answer',ev.id,i],true);box.remove();UI.shownEv=null;}},o.t))));
   hud.appendChild(box);UI.shownEv=ev.id;sfx('event');};}
+
+// Klicks im Seitenpanel dürfen nicht durch die Echtzeit-Aktualisierung verloren gehen
+(function(){const hook=()=>{const b=document.getElementById('panelB');if(!b||b._hold)return;b._hold=true;
+  b.addEventListener('pointerdown',()=>{UI.panelHold=true;},true);
+  const rel=()=>{setTimeout(()=>{UI.panelHold=false;},120);};window.addEventListener('pointerup',rel,true);window.addEventListener('pointercancel',rel,true);
+  b.addEventListener('pointerenter',()=>{UI.panelHover=true;});b.addEventListener('pointerleave',()=>{UI.panelHover=false;});};
+  const _o=openPanel;openPanel=function(){const r=_o.apply(this,arguments);hook();return r;};})();
 
 // ===== Boot, loop, input =====
 const SPEED_MS=[0,1100,550,260,110,35];
