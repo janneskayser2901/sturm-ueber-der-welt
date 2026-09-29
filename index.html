@@ -1,4 +1,4 @@
-<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#11151b"><style>html,body{margin:0;height:100%;background:#11151b;overflow:hidden}</style></head><body><title>Sturm über der Welt</title>
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#11151b"><style>html,body{margin:0;height:100%;background:#11151b;overflow:hidden}</style></head><body><title>Sturm über der Welt</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@400;500;600&family=IM+Fell+English+SC&display=swap" rel="stylesheet">
@@ -3305,7 +3305,7 @@ function drawTerrainTiles(ctx,W,H){const s=CAM.s;const L=tileLevel(s);const T=TL
   if(missing){UI.dirty=true;return;}
   scheduleTilePrefetch(W,H);}
 function scheduleTilePrefetch(W,H){if(R_.pfPending)return;R_.pfPending=true;
-  const run=()=>{R_.pfPending=false;if(UI.screen!=='hud'&&UI.screen!=='pick')return;const s=CAM.s;if(s<=R_.texPX*1.25)return;const L=tileLevel(s);const T=TL[L].T;
+  const run=()=>{R_.pfPending=false;if(UI.screen!=='hud'&&UI.screen!=='pick')return;if(UI.gesture){setTimeout(()=>scheduleTilePrefetch(W,H),200);return;}const s=CAM.s;if(s<=R_.texPX*1.25)return;const L=tileLevel(s);const T=TL[L].T;
     const [i0,i1,j0,j1]=tileRange(L,W,H,1);const end=performance.now()+8;let more=false;
     for(let i=i0;i<=i1&&!more;i++)for(let j=j0;j<=j1;j++){if(i<-1||j<-1||i*T>MAPW+T||j*T>MAPH+T)continue;if(R_.tilesL[L].has(i+','+j))continue;if(performance.now()>end){more=true;break;}getTile(L,i,j,end+1);}
     if(more)scheduleTilePrefetch(W,H);};
@@ -4603,14 +4603,14 @@ function glmQuadP(Q,x0,y0,x1,y1){const gl=GLM.gl;if(!GLM.pvao){GLM.pvao=gl.creat
   gl.bindVertexArray(GLM.pvao);gl.bindBuffer(gl.ARRAY_BUFFER,GLM.pvb);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array([x0,y0,x1,y0,x0,y1,x1,y0,x1,y1,x0,y1]));gl.drawArrays(gl.TRIANGLES,0,6);}
 // Detailkacheln des Geländes (dieselben Kacheln wie der Canvas-Renderer, einmal als Textur hochgeladen)
 function glmTerrainTiles(W,H,T){const gl=GLM.gl;const s=CAM.s;const Lv=tileLevel(s);const TT=TL[Lv].T;const now=performance.now();
-  const busy=now-(UI.lastInput||0)<250;const end=busy?now+2:now+6;let missing=0;const [i0,i1,j0,j1]=tileRange(Lv,W,H,0);
+  const busy=now-(UI.lastInput||0)<250;const end=UI.gesture?now-1:busy?now+2:now+6;let missing=0;const [i0,i1,j0,j1]=tileRange(Lv,W,H,0);
   const drawT=(cv,x0,y0,x1,y1,a,u0,v0,u1,v1)=>{if(!cv||!cv.width)return false;if(!cv._glt)cv._glt=glmCanvasTex(cv,false);gl.bindTexture(gl.TEXTURE_2D,cv._glt);gl.uniform1f(T.u.u_a,a);glmQuad(x0,y0,x1,y1,u0??0,v0??0,u1??1,v1??1);return true;};
   const alt=(i,j)=>{const o=1-Lv;const C=R_.tilesL[o];if(!C)return;const To=TL[o].T;
     if(To>TT){const ti=Math.floor(i*TT/To),tj=Math.floor(j*TT/To);const t2=C.get(ti+','+tj);const u0=(i*TT-ti*To)/To,v0=(j*TT-tj*To)/To,f=TT/To;drawT(t2,i*TT,j*TT,(i+1)*TT,(j+1)*TT,1,u0,v0,u0+f,v0+f);}
     else{const n=TT/To;for(let a=0;a<n;a++)for(let b=0;b<n;b++){const t2=C.get((i*n+a)+','+(j*n+b));drawT(t2,(i*n+a)*To,(j*n+b)*To,(i*n+a+1)*To,(j*n+b+1)*To,1);}}};
   let uploads=0;
   for(let i=i0;i<=i1;i++)for(let j=j0;j<=j1;j++){if(i<-1||j<-1||i*TT>MAPW+TT||j*TT>MAPH+TT)continue;const tl=getTile(Lv,i,j,end);
-    if(tl===undefined){missing++;alt(i,j);continue;}if(!tl)continue;if(!tl._glt){if(uploads>=3&&busy){alt(i,j);missing++;continue;}uploads++;}
+    if(tl===undefined){missing++;alt(i,j);continue;}if(!tl)continue;if(!tl._glt){if(uploads>=(UI.gesture?1:3)&&busy){alt(i,j);missing++;continue;}uploads++;}
     const fa=Math.min(1,(now-(tl._born||0))/260);if(fa<1){alt(i,j);UI.dirty=true;}drawT(tl,i*TT,j*TT,(i+1)*TT,(j+1)*TT,fa);}
   if(missing){UI.dirty=true;return;}scheduleTilePrefetch(W,H);}
 // Minikarte: Einfärbung per GPU in eine kleine Leinwand
@@ -5754,7 +5754,7 @@ function paintBtn(){const b=$('#paintBtn');if(b)b.classList.toggle('on',UI.paint
   UI.paint=false;paintBtn();};}
 // hook pointer: paint instead of pan while active
 (function(){const cv=document.getElementById('map');if(!cv)return;
-  const at=e=>{const r=cv.getBoundingClientRect();const [wx,wy]=s2w(e.clientX-r.left,e.clientY-r.top);return regionAt(wx,wy);};
+  const at=e=>{const r=mapRect();const [wx,wy]=s2w(e.clientX-r.left,e.clientY-r.top);return regionAt(wx,wy);};
   cv.addEventListener('pointerdown',e=>{if(!UI.paint||UI.screen!=='hud'||e.button===2)return;e.stopImmediatePropagation();cv.setPointerCapture(e.pointerId);UI._painting=true;paintAdd(at(e));},true);
   cv.addEventListener('pointermove',e=>{if(!UI.paint||!UI._painting)return;e.stopImmediatePropagation();paintAdd(at(e));},true);
   const end=e=>{if(!UI._painting)return;e.stopImmediatePropagation();UI._painting=false;paintCommit();};
@@ -5928,12 +5928,12 @@ function openDiploAt(px,py){if(!S||!UI.me||UI.screen!=='hud')return false;const 
   if(info&&info.btn===2&&UI.screen==='hud'&&S&&UI.me){const busy=[...UI.selArmies].some(id=>{const a=S.arm.find(x=>x.id===id);return a&&a.ctl===UI.me;})||[...UI.selFleets].some(id=>{const f=S.fleets.find(x=>x.id===id);return f&&f.ctl===UI.me;})||(UI.selWing&&UI.wingMis);
     if(!busy&&openDiploAt(px,py))return;}
   return _t.apply(this,arguments);};}
-(function(){let T=null,st=null;const cancel=()=>{if(T){clearTimeout(T);T=null;}};
+(function(){let T=null,st=null,down=0;const cancel=()=>{if(T){clearTimeout(T);T=null;}};
   window.addEventListener('load',()=>{const cv=document.getElementById('map');if(!cv)return;
-    cv.addEventListener('pointerdown',e=>{cancel();if(e.pointerType==='mouse'||UI.paint)return;st={x:e.clientX,y:e.clientY};const r=cv.getBoundingClientRect();
-      T=setTimeout(()=>{T=null;const busy=[...UI.selArmies].some(id=>{const a=S&&S.arm.find(x=>x.id===id);return a&&a.ctl===UI.me;});if(busy)return;if(openDiploAt(st.x-r.left,st.y-r.top)){UI._lp=true;try{navigator.vibrate&&navigator.vibrate(15);}catch(x){}}},600);},true);
-    cv.addEventListener('pointermove',e=>{if(T&&st&&Math.hypot(e.clientX-st.x,e.clientY-st.y)>10)cancel();},true);
-    cv.addEventListener('pointerup',()=>{cancel();setTimeout(()=>{UI._lp=false;},700);},true);cv.addEventListener('pointercancel',cancel,true);});})();
+    cv.addEventListener('pointerdown',e=>{cancel();if(e.pointerType==='mouse'||UI.paint)return;down++;if(down>1)return;st={x:e.clientX,y:e.clientY,id:e.pointerId};const r=mapRect();
+      T=setTimeout(()=>{T=null;if(UI.gesture||down!==1)return;const busy=[...UI.selArmies].some(id=>{const a=S&&S.arm.find(x=>x.id===id);return a&&a.ctl===UI.me;});if(busy)return;if(openDiploAt(st.x-r.left,st.y-r.top)){UI._lp=true;try{navigator.vibrate&&navigator.vibrate(15);}catch(x){}}},600);},true);
+    cv.addEventListener('pointermove',e=>{if(T&&st&&(e.pointerId!==st.id||Math.hypot(e.clientX-st.x,e.clientY-st.y)>10))cancel();},true);
+    cv.addEventListener('pointerup',e=>{if(e.pointerType!=='mouse')down=Math.max(0,down-1);cancel();setTimeout(()=>{UI._lp=false;},700);},true);cv.addEventListener('pointercancel',e=>{if(e.pointerType!=='mouse')down=Math.max(0,down-1);cancel();},true);});})();
 {const _o=openPanel;openPanel=function(k){if(k!=='vas')UI.bndView=null;return _o.apply(this,arguments);};}
 // ---------- Kartentooltip: Maus über Armee, Flotte, Geschwader oder Schlacht ----------
 (function(){let tip=null,raf=0,last=null;
@@ -5955,7 +5955,7 @@ function openDiploAt(px,py){if(!S||!UI.me||UI.screen!=='hud')return false;const 
           h('div',{class:'vs-b'},h('i',{style:`width:${Math.round((b.q||0)*100)}%`})),h('div',{class:'mt-s muted'},'Angreifer '+Math.round((b.q||0)*100)+' % · Tag '+Math.max(1,S.day-(b.st??S.day)+1)+' · '+TERRAIN[G.regs[b.r].t].n+' · Klick: Kampfbericht'));}}
     tip.classList.remove('hidden');const r=tip.getBoundingClientRect();const W=innerWidth,H=innerHeight;let tx=x+16,ty=y+14;if(tx+r.width>W-8)tx=x-r.width-12;if(ty+r.height>H-8)ty=y-r.height-10;tip.style.transform=`translate(${Math.max(4,tx)}px,${Math.max(4,ty)}px)`;};
   const onMove=e=>{if(e.pointerType!=='mouse'||e.buttons){hide();return;}if(raf)return;const x=e.clientX,y=e.clientY;raf=requestAnimationFrame(()=>{raf=0;if(!S||UI.screen!=='hud'){hide();return;}
-    const cv=document.getElementById('map');const r=cv.getBoundingClientRect();const px=x-r.left,py=y-r.top;const o=(R_.armyHit||[]).slice().reverse().find(o=>px>=o.x&&px<=o.x+o.w&&py>=o.y&&py<=o.y+o.h);if(o)show(o,x,y);else hide();});};
+    const cv=document.getElementById('map');const r=mapRect();const px=x-r.left,py=y-r.top;const o=(R_.armyHit||[]).slice().reverse().find(o=>px>=o.x&&px<=o.x+o.w&&py>=o.y&&py<=o.y+o.h);if(o)show(o,x,y);else hide();});};
   window.addEventListener('load',()=>{const cv=document.getElementById('map');if(!cv)return;cv.addEventListener('pointermove',onMove);cv.addEventListener('pointerleave',hide);cv.addEventListener('pointerdown',hide);window.addEventListener('wheel',hide,{passive:true});});})();
 {const _o2=openPanel;openPanel=function(k){const r=_o2.apply(this,arguments);if(k==='log'||UI.panel==='log'){UI.unread=0;}if(typeof markLog==='function')markLog();return r;};}
 // ---------- Entscheidungen: nie blockierend, das Spiel läuft weiter; ohne Antwort entscheidet der Staat nach einiger Zeit selbst ----------
@@ -6426,11 +6426,23 @@ function simLoop(){const now=performance.now();const dt=Math.min(1500,now-lastT)
   if(NET.mode==='host')hostMaybeSend(now);
 }
 const ZOOMA={log:0,px:0,py:0};
+// Während Wisch- und Zoomgesten: nur die GPU-Karte wird neu gezeichnet, Beschriftungen und Einheiten werden
+// per CSS mitverschoben/-skaliert (kostet praktisch nichts). Nach der Geste folgt ein scharfes Neuzeichnen.
+const OVL={cam:null,tf:false,lastFull:0};
+// Mausrad/Trackpad: wie eine Geste behandeln, kurz nach dem letzten Ereignis scharf neu zeichnen
+function gestPulse(){if(PTR.size)return;UI.gesture=true;clearTimeout(UI._gt);UI._gt=setTimeout(()=>{if(!PTR.size){UI.gesture=false;UI.dirty=true;}},170);}
+function ovlReset(){for(const id of ['map','units']){const c=document.getElementById(id);if(c&&c.style.transform){c.style.transform='';}}OVL.tf=false;}
+function ovlFast(now){const c0=OVL.cam;const k=CAM.s/c0.s;if(k>2.6||k<0.4)return false;
+  const L=GLM.last;if(!L)return false;try{glmRender(L.W,L.H,L.dpr,Object.assign({},L.opts,{selRegion:UI.selRegion,hoverRegion:UI.hover}));}catch(e){return false;}
+  const tx=(c0.x-CAM.x)*CAM.s,ty=(c0.y-CAM.y)*CAM.s;const tf=`translate3d(${tx}px,${ty}px,0) scale(${k})`;
+  for(const id of ['map','units']){const c=document.getElementById(id);if(c){c.style.transformOrigin='0 0';c.style.transform=tf;}}OVL.tf=true;return true;}
 function frame(now){
-  if(ZOOMA.log){const st=Math.abs(ZOOMA.log)<0.004?ZOOMA.log:ZOOMA.log*0.28;ZOOMA.log-=st;zoomAt(ZOOMA.px,ZOOMA.py,Math.exp(st));UI.lastInput=now;}
+  if(ZOOMA.log){const st=Math.abs(ZOOMA.log)<0.004?ZOOMA.log:ZOOMA.log*0.28;ZOOMA.log-=st;zoomAt(ZOOMA.px,ZOOMA.py,Math.exp(st));UI.lastInput=now;gestPulse();}
   if(simChanged&&now-lastTopbar>300){simChanged=false;lastTopbar=now;updateTopbar();refreshPanel();if(UI.infoKind)refreshInfo();checkEvents();checkGameOver();showWarToasts();}
-  if(UI.dirty&&S&&R_.paths&&R_.tex){UI.dirty=false;UI.udirty=false;drawNow();}
-  else if(S&&R_.paths&&R_.tex&&(UI.udirty||(R_.animOn&&!document.hidden&&now-(R_.uLast||0)>=Math.max(32,(R_.uCost||0)*2.5)&&!(UI.lastInput&&now-UI.lastInput<200)))){UI.udirty=false;drawUnitsNow();}
+  const fast=UI.gesture&&S&&R_.paths&&R_.tex&&typeof glmActive==='function'&&glmActive()&&OVL.cam&&UI.screen==='hud';
+  if(fast&&UI.dirty){UI.dirty=false;if(!ovlFast(now)){drawNow();}}
+  else if(UI.dirty&&S&&R_.paths&&R_.tex){UI.dirty=false;UI.udirty=false;drawNow();}
+  else if(S&&R_.paths&&R_.tex&&!OVL.tf&&(UI.udirty||(R_.animOn&&!document.hidden&&now-(R_.uLast||0)>=Math.max(32,(R_.uCost||0)*2.5)&&!(UI.lastInput&&now-UI.lastInput<200)))){UI.udirty=false;drawUnitsNow();}
   if(typeof R3!=='undefined'&&R3.pending){R3.pending=false;UI.dirty=true;}
   else if(typeof glmTick==='function')glmTick(now);
   requestAnimationFrame(frame);
@@ -6449,7 +6461,7 @@ function markLog(){const b=document.getElementById('rb_log');if(!b)return;let d=
 UI.nq=[];UI.nqLast=0;
 function notify(m,kind){if(UI.nq.some(x=>x.m===m))return;UI.nq.push({m,kind,t:performance.now()});UI.nq.sort((a,b)=>(b.kind==='war')-(a.kind==='war'));while(UI.nq.length>4){const i=UI.nq.map(x=>x.kind).lastIndexOf('ok');const j=i>=0?i:UI.nq.length-1;UI.nq.splice(j,1);UI.unread=(UI.unread||0)+1;markLog();}}
 setInterval(()=>{if(!UI.nq.length)return;const now=performance.now();const box=document.querySelector('.toasts');const vis=box?box.children.length:0;if(vis>=2||now-UI.nqLast<1600)return;const n=UI.nq.shift();if(now-n.t>12000&&n.kind!=='war')return;UI.nqLast=now;toast(n.m,n.kind);},300);
-function drawNow(){const cv=$('#map');const dpr=Math.min(2,window.devicePixelRatio||1);const W=cv.clientWidth,H=cv.clientHeight;
+function drawNow(){if(OVL.tf)ovlReset();OVL.cam={x:CAM.x,y:CAM.y,s:CAM.s};OVL.lastFull=performance.now();const cv=$('#map');const dpr=Math.min(2,window.devicePixelRatio||1);const W=cv.clientWidth,H=cv.clientHeight;
   if(cv.width!==Math.round(W*dpr)||cv.height!==Math.round(H*dpr)){cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);}
   const ctx=cv.getContext('2d');
   let targets=null;
@@ -6460,7 +6472,7 @@ function drawNow(){const cv=$('#map');const dpr=Math.min(2,window.devicePixelRat
   if(UI.screen==='hud'&&UI.vasSel&&UI.vasSel.size){ctx.setTransform(dpr*CAM.s,0,0,dpr*CAM.s,-CAM.x*CAM.s*dpr,-CAM.y*CAM.s*dpr);ctx.fillStyle='rgba(255,215,94,0.33)';ctx.strokeStyle='rgba(255,215,94,0.9)';ctx.lineWidth=2/CAM.s;for(const r of UI.vasSel){if(R_.paths[r]){ctx.fill(R_.paths[r]);ctx.stroke(R_.paths[r]);}}}
   if(UI.screen==='hud'&&S.cfg&&S.cfg.build&&UI.me&&S.nat[UI.me]&&S.nat[UI.me].colq){ctx.setTransform(dpr*CAM.s,0,0,dpr*CAM.s,-CAM.x*CAM.s*dpr,-CAM.y*CAM.s*dpr);ctx.setLineDash([4/CAM.s,3/CAM.s]);ctx.strokeStyle='rgba(140,230,160,0.9)';ctx.lineWidth=2/CAM.s;for(const q of S.nat[UI.me].colq){if(R_.paths[q.r])ctx.stroke(R_.paths[q.r]);}ctx.setLineDash([]);}
 }
-function drawUnitsNow(){const cv=$('#units');if(!cv||!S||R_.era!==S.era||!R_.info||R_.info.length!==S.reg.length)return;const dpr=Math.min(2,window.devicePixelRatio||1);const W=cv.clientWidth,H=cv.clientHeight;
+function drawUnitsNow(){if(OVL.tf){UI.udirty=true;return;}const cv=$('#units');if(!cv||!S||R_.era!==S.era||!R_.info||R_.info.length!==S.reg.length)return;const dpr=Math.min(2,window.devicePixelRatio||1);const W=cv.clientWidth,H=cv.clientHeight;
   if(cv.width!==Math.round(W*dpr)||cv.height!==Math.round(H*dpr)){cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);}
   const ctx=cv.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,cv.width,cv.height);R_.uLast=performance.now();
   const t0=performance.now();drawUnits(ctx,W,H,{dpr,me:UI.me||UI.pickTag,mode:UI.screen==='hud'?UI.mode:'pol',selArmies:UI.selArmies,selFleets:UI.selFleets,selWing:UI.selWing});R_.uCost=(R_.uCost||0)*0.8+(performance.now()-t0)*0.2;}
@@ -6469,21 +6481,30 @@ const PTR=new Map();let drag=null,pinch=null;
 function clampCam(){const cv=$('#map');const W=cv.clientWidth,H=cv.clientHeight;CAM.s=clamp(CAM.s,Math.max(W/(MAPW+16),H/(MAPH+16)),110);
   const m=6;CAM.x=clamp(CAM.x,Math.min(-m,MAPW/2-W/CAM.s/2),Math.max(MAPW+m-W/CAM.s,MAPW/2-W/CAM.s/2));CAM.y=clamp(CAM.y,Math.min(-m,MAPH/2-H/CAM.s/2),Math.max(MAPH+m-H/CAM.s,MAPH/2-H/CAM.s/2));}
 function zoomAt(px,py,f){const [wx,wy]=s2w(px,py);CAM.s*=f;clampCam();CAM.x=wx-px/CAM.s;CAM.y=wy-py/CAM.s;clampCam();UI.dirty=true;}
+// Kartenrechteck ohne CSS-Transformation (die Zeichenebenen werden während Gesten verschoben)
+function mapRect(){const a=document.getElementById('app');return (a||$('#map')).getBoundingClientRect();}
 function setupInput(){const cv=$('#map');
   cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);PTR.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(PTR.size===1){drag={x:e.clientX,y:e.clientY,cx:CAM.x,cy:CAM.y,t:performance.now(),moved:false,btn:e.button,type:e.pointerType,shift:e.shiftKey||e.metaKey||e.ctrlKey};}
-    else if(PTR.size===2){const [a,b]=[...PTR.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y),s:CAM.s,mx:(a.x+b.x)/2,my:(a.y+b.y)/2};drag=null;}});
-  cv.addEventListener('pointermove',e=>{const r=cv.getBoundingClientRect();
+    else if(PTR.size===2){const [a,b]=[...PTR.values()];const r=mapRect();const mx=(a.x+b.x)/2-r.left,my=(a.y+b.y)/2-r.top;const [wx,wy]=s2w(mx,my);pinch={d:Math.max(20,Math.hypot(a.x-b.x,a.y-b.y)),s:CAM.s,wx,wy};drag=null;UI.gesture=true;}});
+  cv.addEventListener('pointermove',e=>{const r=mapRect();
     if(PTR.has(e.pointerId))PTR.set(e.pointerId,{x:e.clientX,y:e.clientY});
-    if(pinch&&PTR.size===2){const [a,b]=[...PTR.values()];const d=Math.hypot(a.x-b.x,a.y-b.y);const mx=(a.x+b.x)/2-r.left,my=(a.y+b.y)/2-r.top;const [wx,wy]=s2w(pinch.mx-r.left,pinch.my-r.top);
-      CAM.s=pinch.s*d/pinch.d;clampCam();CAM.x=wx-mx/CAM.s;CAM.y=wy-my/CAM.s;clampCam();UI.dirty=true;return;}
+    if(pinch&&PTR.size===2){e.preventDefault();const [a,b]=[...PTR.values()];const d=Math.max(20,Math.hypot(a.x-b.x,a.y-b.y));const mx=(a.x+b.x)/2-r.left,my=(a.y+b.y)/2-r.top;
+      // der Weltpunkt unter den Fingern bleibt unter den Fingern (Zoom + Verschieben in einem)
+      CAM.s=pinch.s*d/pinch.d;clampCam();CAM.x=pinch.wx-mx/CAM.s;CAM.y=pinch.wy-my/CAM.s;clampCam();UI.lastInput=performance.now();UI.gesture=true;UI.dirty=true;return;}
     if(drag){const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(!drag.moved&&Math.hypot(dx,dy)>6){drag.moved=true;cv.classList.add('dragging');}
-      if(drag.moved){CAM.x=drag.cx-dx/CAM.s;CAM.y=drag.cy-dy/CAM.s;clampCam();UI.dirty=true;}return;}
+      if(drag.moved){CAM.x=drag.cx-dx/CAM.s;CAM.y=drag.cy-dy/CAM.s;clampCam();UI.gesture=true;UI.dirty=true;}return;}
     if(e.pointerType==='mouse'&&S&&R_.paths){const [wx,wy]=s2w(e.clientX-r.left,e.clientY-r.top);const rg=regionAt(wx,wy);if(rg!==UI.hover){UI.hover=rg;UI.dirty=true;}}});
-  const end=e=>{const r=cv.getBoundingClientRect();const was=drag;PTR.delete(e.pointerId);if(PTR.size<2)pinch=null;cv.classList.remove('dragging');
-    if(was&&!was.moved&&PTR.size===0&&performance.now()-was.t<600)onTap(e.clientX-r.left,e.clientY-r.top,was);drag=null;};
-  cv.addEventListener('pointerup',end);cv.addEventListener('pointercancel',e=>{PTR.delete(e.pointerId);drag=null;pinch=null;});
-  cv.addEventListener('wheel',e=>{e.preventDefault();const r=cv.getBoundingClientRect();const dy=e.deltaMode===1?e.deltaY*33:e.deltaY;const px=e.clientX-r.left,py=e.clientY-r.top;UI.lastInput=performance.now();
+  const end=e=>{const r=mapRect();const was=drag;const wasPinch=!!pinch;PTR.delete(e.pointerId);if(PTR.size<2)pinch=null;cv.classList.remove('dragging');
+    if(was&&!was.moved&&PTR.size===0&&performance.now()-was.t<600)onTap(e.clientX-r.left,e.clientY-r.top,was);drag=null;
+    // ein Finger bleibt nach dem Zoomen liegen: nahtlos weiter verschieben statt zu springen
+    if(wasPinch&&PTR.size===1){const [p]=[...PTR.values()];drag={x:p.x,y:p.y,cx:CAM.x,cy:CAM.y,t:0,moved:true,btn:0,type:'touch',shift:false};}
+    if(PTR.size===0){UI.gesture=false;UI.dirty=true;}};
+  cv.addEventListener('pointerup',end);cv.addEventListener('pointercancel',e=>{PTR.delete(e.pointerId);drag=null;pinch=null;if(PTR.size===0){UI.gesture=false;UI.dirty=true;}});
+  // Safari (iPad/Mac): eigene Seiten-Zoom-Gesten abschalten – sonst zoomt die ganze Seite statt der Karte
+  for(const ev of ['gesturestart','gesturechange','gestureend'])document.addEventListener(ev,e=>e.preventDefault(),{passive:false});
+  document.addEventListener('touchmove',e=>{if(e.touches&&e.touches.length>1)e.preventDefault();},{passive:false});
+  cv.addEventListener('wheel',e=>{e.preventDefault();gestPulse();const r=mapRect();const dy=e.deltaMode===1?e.deltaY*33:e.deltaY;const px=e.clientX-r.left,py=e.clientY-r.top;UI.lastInput=performance.now();
     if(!e.ctrlKey&&Math.abs(dy)>=40&&Number.isInteger(dy)){ZOOMA.log+=-dy*0.0019;ZOOMA.px=px;ZOOMA.py=py;} // Mausrad: weich animiert
     else zoomAt(px,py,Math.exp(-dy*(e.ctrlKey?0.01:0.0016)));},{passive:false});
   cv.addEventListener('contextmenu',e=>{e.preventDefault();});
