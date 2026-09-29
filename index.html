@@ -1682,6 +1682,7 @@ function dailyMilitary(){
     if(!canEnter(a.tag,nx)){a.path=[];if(!S.nat[a.tag].ai)pushLog(a.tag,a.nm+': Kein Durchgang nach '+G.regs[nx].n+'.');continue;}
     if(a.amph!==nx&&straitBetween(a.r,nx)&&!canCross(a.tag,G.sz[a.r+','+nx])){a.path=[];if(!S.nat[a.tag].ai)pushLog(a.tag,a.nm+': Der Feind beherrscht die Meerenge bei '+G.regs[nx].n+'. Du brauchst Seeherrschaft.');continue;}
     const hs=hostileIn(a.tag,nx);
+    if(hs.length&&a.org<0.12&&a.amph!==nx){a.path=[];continue;} // ohne Organisation kein Angriff – erst erholen
     if(hs.length){a.bat=nx;if(!battles.has(nx))battles.set(nx,{att:[],def:hs});battles.get(nx).att.push(a);continue;}
     a.prog+=1;a.ent=0;a.res=0;
     if(a.prog>=(a.amph===nx?1:travelDays(a,nx))){a.prev=a.r;a.r=nx;a.path.shift();a.prog=0;if(a.amph===nx)a.amph=null;
@@ -1766,6 +1767,9 @@ function fight(r,att,def){if(!att.length||!def.length)return 0.5;
   for(const a of att)a.q=q;
   for(const d of def){d.inb=true;const N=S.nat[d.tag];const orgL=K.org*0.11*q*fd/(1+N.mods.org+0.06*N.tech.doc);const strL=K.str*0.012*q*fd;
     d.org=Math.max(0,d.org-orgL);d.str=Math.max(0.02,d.str-strL);N.manLost+=strL*(d.inf*10+d.mob*10+d.art*5)*0.6;N.stats.lost+=strL*divs(d);}
+  // aufgeriebene Divisionen (kaum noch Stärke) lösen sich auf
+  for(const l of [att,def])for(const a of l){if(a.str<=0.06&&S.arm.includes(a)){const N=S.nat[a.tag];N.stats.lost+=divs(a);if(divs(a)>=3||!N.ai)log(a.nm+' ('+N.n+', '+divs(a)+' Div.) wurde bei '+G.regs[r].n+' aufgerieben.',[a.tag],'i');S.arm.splice(S.arm.indexOf(a),1);}}
+  att=att.filter(a=>S.arm.includes(a));def=def.filter(a=>S.arm.includes(a));if(!def.length){for(const a of att)S.nat[a.tag].stats.kills+=dD*0.1;return q;}if(!att.length)return q;
   S._batF=S._batF||{};S._batF[r]=C.f;
   const avg=l=>{let w=0,s=0;for(const a of l){w+=divs(a);s+=a.org*divs(a);}return w?s/w:0;};
   const bat={q};
@@ -1777,6 +1781,8 @@ function fight(r,att,def){if(!att.length||!def.length)return 0.5;
   return q;
 }
 function retreatOrDie(d,from){
+  d.str*=0.9; // Rückzug kostet Nachzügler und Material
+  if(d.str<0.1){const N=S.nat[d.tag];if(divs(d)>=3||!N.ai)log(d.nm+' ('+N.n+', '+divs(d)+' Div.) löst sich auf dem Rückzug bei '+G.regs[d.r].n+' auf.',[d.tag],'i');N.stats.lost+=divs(d);N.manLost+=divs(d)*6;S.arm.splice(S.arm.indexOf(d),1);return;}
   const opts=G.adj[d.r].map(e=>e.r).filter(v=>friendly(d.tag,S.reg[v].c)&&!S.arm.some(x=>x.r===v&&atWar(d.tag,x.tag)));
   if(opts.length){opts.sort((x,y)=>(from.includes(x)?1:0)-(from.includes(y)?1:0)||S.reg[y].fort-S.reg[x].fort);d.r=opts[0];d.path=[];d.prog=0;d.ent=0;d.org=Math.min(d.org,0.05);}
   else{const N=S.nat[d.tag];if(divs(d)>=4||!N.ai)log(d.nm+' ('+N.n+', '+divs(d)+' Div.) wurde bei '+G.regs[d.r].n+' eingekesselt und vernichtet.',[d.tag],divs(d)>=8?'w':'i');N.stats.lost+=divs(d);N.manLost+=divs(d)*8;S.arm.splice(S.arm.indexOf(d),1);}
