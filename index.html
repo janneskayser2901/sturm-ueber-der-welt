@@ -472,11 +472,21 @@ body.tlmode #units,body.tlmode #hud .rail,body.tlmode #hud .toasts,body.tlmode #
 (function(){if(window.claude&&window.claude.use)return;if(typeof Peer==='undefined')return;
 const PFX='sturm-welt-v1-';
 const rid=()=>Math.random().toString(36).slice(2,10);
+// Verbindungshelfer: STUN reicht in den meisten Heimnetzen. Hinter strengen Routern, Handy-Hotspots oder Schul-/Firmennetzen
+// braucht WebRTC ein Relais (TURN) – hier das freie Open-Relay-Projekt mit zeitlich begrenzten Zugangsdaten.
+let ICE=null;
+async function peerOpts(){if(window.PEER_OPTS)return window.PEER_OPTS;if(ICE)return ICE;
+  const list=[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']},{urls:'stun:stun.relay.metered.ca:80'}];
+  try{const user=(Math.floor(Date.now()/1000)+2*86400)+':sturm'+rid();const enc=new TextEncoder();
+    const key=await crypto.subtle.importKey('raw',enc.encode('openrelayprojectsecret'),{name:'HMAC',hash:'SHA-1'},false,['sign']);
+    const sig=new Uint8Array(await crypto.subtle.sign('HMAC',key,enc.encode(user)));let b='';for(const x of sig)b+=String.fromCharCode(x);
+    list.push({urls:['turn:staticauth.openrelay.metered.ca:80','turn:staticauth.openrelay.metered.ca:80?transport=tcp','turn:staticauth.openrelay.metered.ca:443','turns:staticauth.openrelay.metered.ca:443?transport=tcp'],username:user,credential:btoa(b)});}catch(e){console.warn('TURN nicht verfügbar',e);}
+  ICE={config:{iceServers:list},debug:0};return ICE;}
 function mkLocal(name){let pres={};const me='loc'+rid();const onP=[];
   const self=()=>({peer:me,isMe:true,sameTab:true,kind:'viewer',guest:false,presence:pres,updatedAt:Date.now()});
   return {name,emit:async()=>{},on:()=>()=>{},presence:async p=>{for(const k in p){if(p[k]===null)delete pres[k];else pres[k]=p[k];}pres={...pres};},
     peers:()=>[self()],onPeers:fn=>{onP.push(fn);setTimeout(()=>fn({peers:[self()],joined:[self()],left:[],updated:[]}),0);return ()=>{};},connected:()=>true,onConnection:fn=>{setTimeout(()=>fn(true),0);return ()=>{};},leave:async()=>{}};}
-function mkPeerRoom(name){return new Promise((resolve,reject)=>{
+async function mkPeerRoom(name){const OPTS=await peerOpts();return new Promise((resolve,reject)=>{
   const hubId=PFX+name.replace(/[^a-z0-9-]/gi,'');
   const peers=new Map();const onP=[];const topicH=new Map();const conns=new Map();let myPres={};let me=null;let isHub=false;let hubConn=null;let closed=false;let peer=null;let up=false;const onC=[];
   const snap=()=>[...peers.values()].map(p=>Object.freeze({...p}));
@@ -511,14 +521,14 @@ function mkPeerRoom(name){return new Promise((resolve,reject)=>{
     connected:()=>up,onConnection:fn=>{onC.push(fn);setTimeout(()=>fn(up),0);return ()=>{};},
     leave:async()=>{closed=true;try{if(hubConn)hubConn.close();}catch(e){}for(const c of conns.values())try{c.close();}catch(e){}try{peer&&peer.destroy();}catch(e){}}};
   let settled=false;const done=ok=>{if(settled)return;settled=true;if(ok)resolve(R);else reject(new Error('Verbindung fehlgeschlagen'));};
-  const becomeClient=()=>{peer=new Peer(PFX+'p-'+rid(),window.PEER_OPTS||{});
+  const becomeClient=()=>{peer=new Peer(PFX+'p-'+rid(),OPTS);
     peer.on('open',id=>{me=id;peers.set(me,selfPeer());hubConn=peer.connect(hubId,{reliable:true,serialization:'json'});
-      const to=setTimeout(()=>{if(!hubConn.open)done(false);},15000);
+      const to=setTimeout(()=>{if(!hubConn.open){done(false);try{peer.destroy();}catch(e){}}},30000);
       hubConn.on('open',()=>{clearTimeout(to);setConn(true);hubConn.send({k:'pres',presence:myPres});done(true);});
       hubConn.on('data',cliHandle);
       const lost=()=>{setConn(false);for(const id of [...peers.keys()])if(id!==me)drop(id);};hubConn.on('close',lost);hubConn.on('error',lost);});
     peer.on('error',e=>{console.warn('peer',e&&e.type);if(!settled)done(false);});};
-  peer=new Peer(hubId,window.PEER_OPTS||{});
+  peer=new Peer(hubId,OPTS);
   peer.on('open',id=>{isHub=true;me=id;peers.set(me,selfPeer());setConn(true);done(true);});
   peer.on('connection',c=>{if(isHub)hubHandle(c);});
   peer.on('disconnected',()=>{if(!closed&&isHub)try{peer.reconnect();}catch(e){}});
@@ -5205,7 +5215,7 @@ function renderLobbyList(){const box=$('#lobbyList');if(!box)return;box.innerHTM
 async function openCreateLobby2(){const era=UI.lobbyEraPick;const name='Lobby von '+(NET.nick||'Spieler');
   show('loading');const ok=await hostLobby(name,era).catch(()=>false);if(!ok){toast('Lobby konnte nicht erstellt werden','bad');openMP();return;}
   NET.myPeer=myPeerLabel();newGame(era,{hist:UI.lobbyHist});prepGeometry(era);centerEurope();NET.myTag=null;openLobbyScreen();}
-async function doJoin(code){if(!NET.nick)return toast('Bitte gib einen Namen ein','bad');show('loading');const ok=await joinLobby(code).catch(()=>false);if(!ok){toast('Beitritt fehlgeschlagen','bad');openMP();return;}
+async function doJoin(code){if(!NET.nick)return toast('Bitte gib einen Namen ein','bad');show('loading');const ok=await joinLobby(code).catch(()=>false);if(!ok){toast('Beitritt fehlgeschlagen – prüfe den Lobby-Code und ob der Gastgeber die Lobby noch offen hat (Seite im Vordergrund). Nochmal versuchen hilft oft.','bad');openMP();return;}
   NET.myPeer=myPeerLabel();setTimeout(()=>{if(!NET.hostPeer){toast('Keine Antwort vom Host – ist der Code richtig?','bad');}},6000);
   UI.waitLobby=true;const tryOpen=()=>{if(NET.lobbyEra&&NET.hostPeer){newGame(NET.lobbyEra,{});prepGeometry(NET.lobbyEra);centerEurope();openLobbyScreen();}else setTimeout(tryOpen,300);};tryOpen();}
 function openLobbyScreen(){show('pick');const el=$('#pick');UI.onLobbyUpdate=renderLobby;UI.pickTag=null;renderLobby();}
