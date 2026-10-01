@@ -586,12 +586,14 @@ async function peerOpts(){if(window.PEER_OPTS)return window.PEER_OPTS;if(ICE)ret
     const key=await crypto.subtle.importKey('raw',enc.encode('openrelayprojectsecret'),{name:'HMAC',hash:'SHA-1'},false,['sign']);
     const sig=new Uint8Array(await crypto.subtle.sign('HMAC',key,enc.encode(user)));let b='';for(const x of sig)b+=String.fromCharCode(x);
     list.push({urls:['turn:staticauth.openrelay.metered.ca:80','turn:staticauth.openrelay.metered.ca:80?transport=tcp','turn:staticauth.openrelay.metered.ca:443','turns:staticauth.openrelay.metered.ca:443?transport=tcp'],username:user,credential:btoa(b)});}catch(e){console.warn('TURN nicht verfügbar',e);}
-  ICE={config:{iceServers:list},debug:0};return ICE;}
+  list.push({urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'});
+  ICE={config:{iceServers:list,iceCandidatePoolSize:2},debug:0,pingInterval:4000};return ICE;}
+function peerStatus(t){try{if(window.PEER_STATUS)window.PEER_STATUS(t);}catch(e){}}
 function mkLocal(name){let pres={};const me='loc'+rid();const onP=[];
   const self=()=>({peer:me,isMe:true,sameTab:true,kind:'viewer',guest:false,presence:pres,updatedAt:Date.now()});
   return {name,emit:async()=>{},on:()=>()=>{},presence:async p=>{for(const k in p){if(p[k]===null)delete pres[k];else pres[k]=p[k];}pres={...pres};},
     peers:()=>[self()],onPeers:fn=>{onP.push(fn);setTimeout(()=>fn({peers:[self()],joined:[self()],left:[],updated:[]}),0);return ()=>{};},connected:()=>true,onConnection:fn=>{setTimeout(()=>fn(true),0);return ()=>{};},leave:async()=>{}};}
-async function mkPeerRoom(name){const OPTS=await peerOpts();return new Promise((resolve,reject)=>{
+async function mkPeerRoom(name,role){const OPTS=await peerOpts();return new Promise((resolve,reject)=>{
   const hubId=PFX+name.replace(/[^a-z0-9-]/gi,'');
   const peers=new Map();const onP=[];const topicH=new Map();const conns=new Map();let myPres={};let me=null;let isHub=false;let hubConn=null;let closed=false;let peer=null;let up=false;const onC=[];
   const snap=()=>[...peers.values()].map(p=>Object.freeze({...p}));
@@ -603,13 +605,13 @@ async function mkPeerRoom(name){const OPTS=await peerOpts();return new Promise((
   const drop=id=>{const p=peers.get(id);if(p){peers.delete(id);fire([],[p],[]);}};
   const bcast=(m,except)=>{for(const [id,c] of conns)if(id!==except&&c.open){try{c.send(m);}catch(e){}}};
   // hub side
-  const hubHandle=(c)=>{c.on('open',()=>{conns.set(c.peer,c);
+  const hubHandle=(c)=>{c.on('open',()=>{const old=conns.get(c.peer);conns.set(c.peer,c);if(old&&old!==c)try{old.close();}catch(e){}
       c.send({k:'snap',peers:[...peers.values()].filter(p=>p.peer!==c.peer).map(p=>[p.peer,p.presence])});
       setPres(c.peer,{});bcast({k:'pres',peer:c.peer,presence:{}},c.peer);});
     c.on('data',m=>{if(!m||typeof m!=='object')return;
       if(m.k==='pres'){setPres(c.peer,m.presence);bcast({k:'pres',peer:c.peer,presence:m.presence},c.peer);}
       else if(m.k==='emit'){deliver(m.topic,m.data,c.peer);bcast({k:'emit',peer:c.peer,topic:m.topic,data:m.data},c.peer);}});
-    const gone=()=>{if(!conns.has(c.peer))return;conns.delete(c.peer);drop(c.peer);bcast({k:'leave',peer:c.peer});};
+    const gone=()=>{if(conns.get(c.peer)!==c)return;conns.delete(c.peer);drop(c.peer);bcast({k:'leave',peer:c.peer});};
     c.on('close',gone);c.on('error',gone);};
   // client side
   const cliHandle=(m)=>{if(!m||typeof m!=='object')return;
@@ -624,23 +626,44 @@ async function mkPeerRoom(name){const OPTS=await peerOpts();return new Promise((
       if(isHub)bcast({k:'pres',peer:me,presence:myPres});else if(hubConn&&hubConn.open)hubConn.send({k:'pres',presence:myPres});fire([],[],[peers.get(me)]);},
     peers:()=>snap(),onPeers:fn=>{onP.push(fn);setTimeout(()=>{const s=snap();fn({peers:s,joined:s,left:[],updated:[]});},0);return ()=>{const i=onP.indexOf(fn);if(i>=0)onP.splice(i,1);};},
     connected:()=>up,onConnection:fn=>{onC.push(fn);setTimeout(()=>fn(up),0);return ()=>{};},
-    leave:async()=>{closed=true;try{if(hubConn)hubConn.close();}catch(e){}for(const c of conns.values())try{c.close();}catch(e){}try{peer&&peer.destroy();}catch(e){}}};
+    leave:async()=>{closed=true;clearTimeout(rcT);clearTimeout(attemptT);document.removeEventListener('visibilitychange',onVis);window.removeEventListener('online',onVis);window.removeEventListener('pageshow',onVis);try{if(hubConn)hubConn.close();}catch(e){}for(const c of conns.values())try{c.close();}catch(e){}try{peer&&peer.destroy();}catch(e){}}};
   let settled=false;const done=ok=>{if(settled)return;settled=true;if(ok)resolve(R);else reject(new Error('Verbindung fehlgeschlagen'));};
-  const becomeClient=()=>{peer=new Peer(PFX+'p-'+rid(),OPTS);
-    peer.on('open',id=>{me=id;peers.set(me,selfPeer());hubConn=peer.connect(hubId,{reliable:true,serialization:'json'});
-      const to=setTimeout(()=>{if(!hubConn.open){done(false);try{peer.destroy();}catch(e){}}},30000);
-      hubConn.on('open',()=>{clearTimeout(to);setConn(true);hubConn.send({k:'pres',presence:myPres});done(true);});
-      hubConn.on('data',cliHandle);
-      const lost=()=>{setConn(false);for(const id of [...peers.keys()])if(id!==me)drop(id);};hubConn.on('close',lost);hubConn.on('error',lost);});
-    peer.on('error',e=>{console.warn('peer',e&&e.type);if(!settled)done(false);});};
+  // Client: Verbindung mit Wiederholungen; bei Abbruch (iPad im Hintergrund, WLAN-Wechsel) automatisch neu verbinden – gleiche ID, gleiche Nation
+  let tries=0,rcT=null,attemptT=null,cid=PFX+'p-'+rid();
+  const connectHub=()=>{if(closed)return;clearTimeout(attemptT);tries++;
+    if(!settled)peerStatus(tries>1?'Verbinde … (Versuch '+tries+')':'Verbinde mit dem Gastgeber …');
+    try{if(hubConn){hubConn.removeAllListeners&&hubConn.removeAllListeners();hubConn.close();}}catch(e){}
+    hubConn=peer.connect(hubId,{reliable:true,serialization:'json'});const hc=hubConn;
+    attemptT=setTimeout(()=>{if(hc!==hubConn||hc.open)return;retry();},tries<=2?12000:18000);
+    hc.on('open',()=>{if(hc!==hubConn)return;clearTimeout(attemptT);tries=0;setConn(true);hc.send({k:'pres',presence:myPres});done(true);peerStatus('');});
+    hc.on('data',cliHandle);
+    const lost=()=>{if(hc!==hubConn)return;setConn(false);for(const id of [...peers.keys()])if(id!==me)drop(id);retry();};hc.on('close',lost);hc.on('error',lost);};
+  const retry=()=>{if(closed)return;clearTimeout(rcT);
+    if(!settled&&tries>=5){done(false);try{peer.destroy();}catch(e){}return;}
+    const wait=settled?Math.min(10000,1500*Math.max(1,tries)):1500;
+    rcT=setTimeout(()=>{if(closed)return;if(!peer||peer.destroyed){mkClientPeer();return;}if(peer.disconnected){try{peer.reconnect();}catch(e){mkClientPeer();}return;}connectHub();},wait);};
+  const mkClientPeer=()=>{try{if(peer&&!peer.destroyed)peer.destroy();}catch(e){}
+    peer=new Peer(cid,OPTS);
+    peer.on('open',id=>{me=id;peers.set(me,selfPeer());connectHub();});
+    peer.on('disconnected',()=>{if(!closed)retry();});
+    peer.on('error',e=>{const t=e&&e.type;console.warn('peer',t);
+      if(t==='unavailable-id'){cid=PFX+'p-'+rid();mkClientPeer();return;}
+      if(t==='peer-unavailable'){if(!settled)peerStatus('Gastgeber nicht erreichbar – neuer Versuch …');retry();return;}
+      if(t==='network'||t==='server-error'||t==='socket-error'||t==='socket-closed'||t==='webrtc'){retry();return;}
+      if(!settled&&t==='invalid-id'){done(false);}});};
+  const becomeClient=()=>mkClientPeer();
+  // iPad/Safari: beim Zurückkehren in den Vordergrund sofort prüfen und neu verbinden
+  const onVis=()=>{if(document.visibilityState!=='visible'||closed)return;if(!isHub&&settled&&!up){tries=0;retry();}if(isHub&&peer&&peer.disconnected){try{peer.reconnect();}catch(e){}}};
+  document.addEventListener('visibilitychange',onVis);window.addEventListener('online',onVis);window.addEventListener('pageshow',onVis);
+  if(role==='client'){becomeClient();return;}
   peer=new Peer(hubId,OPTS);
   peer.on('open',id=>{isHub=true;me=id;peers.set(me,selfPeer());setConn(true);done(true);});
   peer.on('connection',c=>{if(isHub)hubHandle(c);});
-  peer.on('disconnected',()=>{if(!closed&&isHub)try{peer.reconnect();}catch(e){}});
-  peer.on('error',e=>{if(!isHub&&e&&e.type==='unavailable-id'){try{peer.destroy();}catch(_){}becomeClient();}else console.warn('peer',e&&e.type);});
+  peer.on('disconnected',()=>{if(!closed&&isHub){const rc=()=>{if(closed||!peer.disconnected)return;try{peer.reconnect();}catch(e){}setTimeout(rc,4000);};rc();}});
+  peer.on('error',e=>{if(!isHub&&e&&e.type==='unavailable-id'){try{peer.destroy();}catch(_){}if(role==='host'){done(false);return;}becomeClient();}else{console.warn('peer',e&&e.type);if(!isHub&&!settled)done(false);}});
 });}
 const lobby=mkLocal('__lobby');
-const api={...lobby,join:async(name)=>{const n=String(name).toLowerCase();return mkPeerRoom(n);}};
+const api={...lobby,join:async(name,o)=>{const n=String(name).toLowerCase();return mkPeerRoom(n,o&&o.role);}};
 window.claude={use:async n=>n==='room'?api:null};
 window.STANDALONE=true;
 if(!window.SHARE_URL)window.SHARE_URL=location.origin+location.pathname;
@@ -4925,17 +4948,17 @@ function decodeState(js){const st=JSON.parse(js);
 const HAS_CS=typeof CompressionStream!=='undefined'&&typeof DecompressionStream!=='undefined';
 function u8ToB64(u){let s='';const CH=0x8000;for(let i=0;i<u.length;i+=CH)s+=String.fromCharCode.apply(null,u.subarray(i,i+CH));return btoa(s);}
 function b64ToU8(b){const s=atob(b);const u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u;}
-async function packState(js){if(HAS_CS){try{const cs=new CompressionStream('deflate-raw');const out=new Response(new Blob([js]).stream().pipeThrough(cs));return 'D:'+u8ToB64(new Uint8Array(await out.arrayBuffer()));}catch(e){}}return 'L:'+LZString.compressToBase64(js);}
+async function packState(js,noCS){if(HAS_CS&&!noCS){try{const cs=new CompressionStream('deflate-raw');const out=new Response(new Blob([js]).stream().pipeThrough(cs));return 'D:'+u8ToB64(new Uint8Array(await out.arrayBuffer()));}catch(e){}}return 'L:'+LZString.compressToBase64(js);}
 async function unpackState(z){if(z.startsWith('D:')){const ds=new DecompressionStream('deflate-raw');return await new Response(new Blob([b64ToU8(z.slice(2))]).stream().pipeThrough(ds)).text();}if(z.startsWith('L:'))return LZString.decompressFromBase64(z.slice(2));return LZString.decompressFromBase64(z);}
 // ----- host -----
-async function hostLobby(name,era){if(!NET.room)return false;const code=rnd4();NET.code=code;NET.isHost=true;NET.mode='host';NET.lobbyEra=era;NET.lobbyName=name;
-  NET.lr=await NET.room.join(ROOM_PREFIX+code);NET.assign={};NET.started=false;
+async function hostLobby(name,era){if(!NET.room)return false;let code;NET.isHost=true;NET.mode='host';NET.lobbyEra=era;NET.lobbyName=name;
+  for(let k=0;k<3;k++){code=rnd4();try{NET.lr=await NET.room.join(ROOM_PREFIX+code,{role:'host'});break;}catch(e){NET.lr=null;if(k===2)throw e;}}NET.code=code;NET.assign={};NET.started=false;
   setupLobbyRoom();hostPresence();return true;}
 function hostPresence(){if(!NET.room)return;const players=NET.lr?NET.lr.peers().length:1;
   const lob={lobby:{code:NET.code,name:NET.lobbyName,era:NET.lobbyEra,n:players,st:NET.started?1:0,host:NET.nick}};const k1=JSON.stringify(lob);
   if(k1!==NET._p1){NET._p1=k1;NET.room.presence(lob).catch(()=>{});}
   if(NET.lr){const lp={host:true,nick:NET.nick,era:NET.lobbyEra,name:NET.lobbyName,assign:NET.assign,started:NET.started?1:0,tag:NET.myTag||null,hist:UI.lobbyHist?1:0,cfg:gameCfg(),flag:UI.spawnFlag||null};const k2=JSON.stringify(lp);if(k2!==NET._p2){NET._p2=k2;NET.lr.presence(lp).catch(()=>{});}}}
-async function joinLobby(code){if(!NET.room)return false;NET.code=code;NET.isHost=false;NET.mode='client';NET.lr=await NET.room.join(ROOM_PREFIX+code);setupLobbyRoom();NET.lr.presence({nick:NET.nick,tag:null,cmds:[]}).catch(()=>{});return true;}
+async function joinLobby(code){if(!NET.room)return false;NET.code=code;NET.isHost=false;NET.mode='client';NET.lr=await NET.room.join(ROOM_PREFIX+code,{role:'client'});setupLobbyRoom();NET.lr.presence({nick:NET.nick,tag:null,cmds:[],cs:HAS_CS?1:0}).catch(()=>{});return true;}
 async function leaveLobby(){NET._p1=NET._p2=null;NET.buildMap=null;try{if(NET.lr)await NET.lr.leave();}catch(e){}NET.lr=null;NET.code=null;NET.isHost=false;NET.mode='sp';NET.started=false;if(NET.room)NET.room.presence({lobby:null}).catch(()=>{});}
 function setupLobbyRoom(){const lr=NET.lr;
   lr.onPeers(ch=>{
@@ -4977,7 +5000,8 @@ let lastSend=0;
 function hostMaybeSend(now){if(NET.mode!=='host'||!NET.started||!NET.lr)return;const iv=NET.paused||!S.speed?2500:1000;
   if(!NET.forceSend&&now-lastSend<iv)return;if(now-lastSend<250)return;lastSend=now;NET.forceSend=false;
   if(NET._packing)return;let js;try{js=encodeState();}catch(e){console.warn(e);return;}NET._packing=true;
-  packState(js).then(z=>{NET._packing=false;if(!NET.lr)return;const CH=3600;const t=Math.ceil(z.length/CH);NET.snapId=(NET.snapId+1)%100000;
+  const noCS=NET.lr.peers().some(p=>!p.isMe&&p.presence&&p.presence.cs===0);
+  packState(js,noCS).then(z=>{NET._packing=false;if(!NET.lr)return;const CH=3600;const t=Math.ceil(z.length/CH);NET.snapId=(NET.snapId+1)%100000;
   for(let i=0;i<t;i++)NET.lr.emit('st',{id:NET.snapId,n:i,t,d:z.slice(i*CH,(i+1)*CH)}).catch(e=>{if(e&&e.code==='not_permitted'&&!NET.warned){NET.warned=true;UI.toast('Du darfst in diesem Artifact nicht hosten. Der Besitzer muss dir Mitwirkenden-Rechte geben oder selbst hosten.','bad');}});NET.lastSize=z.length;},()=>{NET._packing=false;});}
 // ----- client -----
 function clientSend(cmd){NET.seq++;NET.cmdQueue.push([NET.seq,cmd]);if(NET.cmdQueue.length>20)NET.cmdQueue.shift();NET.lr.presence({cmds:NET.cmdQueue}).catch(()=>{});NET.pendingRes[NET.seq]=true;return NET.seq;}
@@ -5036,7 +5060,7 @@ function cmd(c,quiet){
   R_.polDirty=true;R_.labelsDirty=true;UI.dirty=true;refreshPanel(true);return res;}
 function isAuthority(){return NET.mode==='sp'||(NET.mode==='host'&&NET.started);}
 // ================= SCREENS =================
-function show(screen){UI.screen=screen;for(const id of ['menu','eras','pick','mp','lobby','hud','helpS','loading'])$('#'+id).classList.toggle('hidden',id!==screen&&!(id==='hud'&&false));
+function show(screen){UI.screen=screen;if(screen!=='loading'){const l=document.querySelector('#loading .loading');if(l)l.textContent='Karte wird gezeichnet …';}for(const id of ['menu','eras','pick','mp','lobby','hud','helpS','loading'])$('#'+id).classList.toggle('hidden',id!==screen&&!(id==='hud'&&false));
   if(screen!=='hud')$('#hud').classList.add('hidden');}
 function buildMenu(){const el=$('#menu');el.innerHTML='';
   const hasSave=!!listSaves().length;
@@ -5451,7 +5475,7 @@ async function openMP(){show('mp');const el=$('#mp');el.innerHTML='';
   card.appendChild(h('label',{class:'label',for:'nick'},'Dein Name'));
   card.appendChild(h('input',{id:'nick',value:NET.nick||'',maxlength:'20',placeholder:'Spielername',oninput:e=>{NET.nick=e.target.value.trim().slice(0,20);try{localStorage.setItem('sue_nick',NET.nick);}catch(x){}}}));
   if(!window.STANDALONE){card.appendChild(h('div',{class:'sec-t',style:'margin-top:8px'},'Offene Lobbys'));card.appendChild(h('div',{class:'lobby-list',id:'lobbyList'}));}else card.appendChild(h('div',{class:'sec-t',style:'margin-top:8px'},'Lobby beitreten'));
-  card.appendChild(h('div',{class:'row'},h('input',{id:'joinCode',class:'grow',placeholder:'Lobby-Code',maxlength:'8'}),h('button',{onclick:()=>{const c=$('#joinCode').value.trim().toLowerCase();if(c)doJoin(c);}},'Beitreten')));
+  card.appendChild(h('div',{class:'row'},h('input',{id:'joinCode',class:'grow',placeholder:'Lobby-Code',maxlength:'12',autocapitalize:'off',autocorrect:'off',autocomplete:'off',spellcheck:'false',inputmode:'text',onkeydown:e=>{if(e.key==='Enter'){const c=e.target.value;if(c)doJoin(c);}}}),h('button',{onclick:()=>{const c=$('#joinCode').value.trim().toLowerCase();if(c)doJoin(c);}},'Beitreten')));
   card.appendChild(h('button',{class:'primary',onclick:()=>{if(!NET.nick)return toast('Bitte gib einen Namen ein','bad');UI.mpFlow=true;buildEras();show('eras');}},'Neue Lobby erstellen'));
   card.appendChild(h('div',{class:'hint'},window.STANDALONE?'Erstelle eine Lobby und schick den Einladungslink – Freunde öffnen ihn einfach im Browser, ohne Anmeldung. Wer die Lobby erstellt, ist Host: Auf seinem Gerät läuft die Simulation, lass den Tab offen.':'Freunde brauchen Zugriff auf dieses Artifact (Teilen-Menü in claude.ai) und müssen angemeldet sein. Wer die Lobby erstellt, ist Host: Auf seinem Gerät läuft die Simulation.'));
   el.appendChild(card);renderLobbyList();UI.onLobbyList=renderLobbyList;}
@@ -5461,7 +5485,8 @@ function renderLobbyList(){const box=$('#lobbyList');if(!box)return;box.innerHTM
 async function openCreateLobby2(){const era=UI.lobbyEraPick;const name='Lobby von '+(NET.nick||'Spieler');
   show('loading');const ok=await hostLobby(name,era).catch(()=>false);if(!ok){toast('Lobby konnte nicht erstellt werden','bad');openMP();return;}
   NET.myPeer=myPeerLabel();newGame(era,{hist:UI.lobbyHist});prepGeometry(era);centerEurope();NET.myTag=null;openLobbyScreen();}
-async function doJoin(code){if(!NET.nick)return toast('Bitte gib einen Namen ein','bad');show('loading');const ok=await joinLobby(code).catch(()=>false);if(!ok){toast('Beitritt fehlgeschlagen – prüfe den Lobby-Code und ob der Gastgeber die Lobby noch offen hat (Seite im Vordergrund). Nochmal versuchen hilft oft.','bad');openMP();return;}
+window.PEER_STATUS=t=>{const l=document.querySelector('#loading .loading');if(l&&UI.screen==='loading')l.textContent=t||'Verbunden – Lobby wird geladen …';if(t&&UI.screen!=='loading'&&NET.mode==='client'&&UI.screen!=='mp')toast(t,'bad');};
+async function doJoin(code){code=String(code||'').trim().toLowerCase().replace(/[^a-z0-9]/g,'');if(!NET.nick)return toast('Bitte gib einen Namen ein','bad');if(!code)return toast('Bitte den Lobby-Code eingeben','bad');show('loading');{const l=document.querySelector('#loading .loading');if(l)l.textContent='Verbinde mit dem Gastgeber …';}const ok=await joinLobby(code).catch(()=>false);if(!ok){toast('Beitritt fehlgeschlagen – prüfe den Lobby-Code und ob der Gastgeber die Lobby noch offen hat (Seite im Vordergrund). Nochmal versuchen hilft oft.','bad');openMP();return;}
   NET.myPeer=myPeerLabel();setTimeout(()=>{if(!NET.hostPeer){toast('Keine Antwort vom Host – ist der Code richtig?','bad');}},6000);
   UI.waitLobby=true;const tryOpen=()=>{if(NET.lobbyEra&&NET.hostPeer){newGame(NET.lobbyEra,{});prepGeometry(NET.lobbyEra);centerEurope();openLobbyScreen();}else setTimeout(tryOpen,300);};tryOpen();}
 function openLobbyScreen(){show('pick');const el=$('#pick');UI.onLobbyUpdate=renderLobby;UI.pickTag=null;renderLobby();}
@@ -5514,7 +5539,7 @@ PANELS.nav=b=>{const t=UI.me,N=S.nat[t];const E=ERAS[S.era];const docks=docksOf(
     flagEl(f.tag,20,13),h('span',{class:'nm'},f.nm+' · '+(f.p>=0?'Hafen '+G.regs[f.p].n:G.zones[f.z].n)),h('span',{class:'num muted'},shipCount(f)),h('span',{class:'pill'},({patrol:'Patrouille',raid:'Handelskrieg',port:'Hafen'})[f.mis]||f.mis)));
   b.appendChild(fl);
   b.appendChild(h('div',{class:'hint'},'Tippe auf eine Flotte und dann auf ein Meeresgebiet, um sie zu verlegen. Wer ein Meer mit überlegener Flotte hält, hat dort die Seeherrschaft: nur dann gelingen Landungen und Überfahrten über Meerengen. Truppen über das Meer brauchen '+TRANS_PL[S.era]+' – Einschiffung und Überfahrt dauern einige Tage, eine Seelandung muss gut vorbereitet werden. U-Boote im Handelskrieg versenken feindliche Konvois – das kostet den Gegner Rohstoffe und Nachschub.'));};
-PANELS.air=b=>{const t=UI.me,N=S.nat[t];const E=ERAS[S.era];const ws=S.wings.filter(w=>w.ctl===t);
+PANELS.air=b=>{const t=UI.me,N=S.nat[t];const E=ERAS[S.era];if(!E.air){b.appendChild(h('div',{class:'hint'},'In dieser Epoche gibt es noch keine Luftwaffe.'));return;}const ws=S.wings.filter(w=>w.ctl===t);
   b.appendChild(h('div',{class:'stats'},h('div',{class:'stat'},h('span',null,'Flugzeuge im Lager'),h('span',{class:'num'},fmt(N.planes))),h('div',{class:'stat'},h('span',null,'Geschwader'),h('span',{class:'num'},ws.length)),
     h('div',{class:'stat'},h('span',null,'Maschinen im Einsatz'),h('span',{class:'num'},fmt(ws.reduce((s,w)=>s+w.n,0)))),h('div',{class:'stat'},h('span',null,'Produktion'),h('span',{class:'num'},N.lines.a+' Fabr.'))));
   const mk=h('div',{class:'sec'},h('div',{class:'sec-t'},'Geschwader aufstellen'));
@@ -6007,11 +6032,17 @@ function mmSetup(){const hud=$('#hud');if(!hud||$('#minimap'))return;MM.h=Math.r
   cv.addEventListener('pointerdown',e=>{e.stopPropagation();MM.drag=true;cv.setPointerCapture(e.pointerId);go(e);});
   cv.addEventListener('pointermove',e=>{if(MM.drag)go(e);});cv.addEventListener('pointerup',()=>{MM.drag=false;});cv.addEventListener('pointercancel',()=>{MM.drag=false;});
   MM.cv=cv;MM.bg=null;}
+// Minikarte ohne GPU-Rücklesen (readPixels würde die Grafikkarte jedes Mal anhalten – Ruckler): kleines Regionsraster einmal, dann nur neu einfärben
+function mmColor(w,h){try{if(!MM.idr||MM.idrW!==w||MM.idrEra!==S.era){const R=renderIdRaster(0,0,MAPW,MAPH,w/MAPW,true);MM.idr=R;MM.idrW=w;MM.idrEra=S.era;}const R=MM.idr;
+    const P=polPalette(UI.mode==='ter'?'pol':(R_.polMode||'pol'),UI.me);const cv=MM.colCv||(MM.colCv=document.createElement('canvas'));if(cv.width!==R.w||cv.height!==R.h){cv.width=R.w;cv.height=R.h;MM.colIm=null;}
+    const c=cv.getContext('2d');const im=MM.colIm||(MM.colIm=c.createImageData(R.w,R.h));const u=new Uint32Array(im.data.buffer);const id=R.id,land=R.land;const n=S.reg.length;
+    for(let i=0;i<u.length;i++){const r=id[i];if(r<0||r>=n||!land[i]||P.un[r]){u[i]=0;continue;}const occ=P.occ[r];u[i]=occ&&((i%R.w+(i/R.w|0))&2)?occ:P.fill[r];}
+    c.putImageData(im,0,0);return cv;}catch(e){console.warn('mm',e);return null;}}
 function mmDraw(){const wrap=$('#minimap');if(!wrap||!MM.cv||wrap.classList.contains('mini')||UI.screen!=='hud')return;const now=performance.now();
   if(!MM.bg||(R_.polT!==MM.polT&&now-MM.bgT>1500)){MM.polT=R_.polT;MM.bgT=now;const b=MM.bg||document.createElement('canvas');b.width=MM.w*2;b.height=MM.h*2;const c=b.getContext('2d');
     c.fillStyle='#1d3a50';c.fillRect(0,0,b.width,b.height);c.imageSmoothingEnabled=true;
     if(R_.tex){const M=R_.texM,PX=R_.texPX;c.drawImage(R_.tex,M*PX,M*PX,MAPW*PX,MAPH*PX,0,0,b.width,b.height);}
-    const gm=typeof glmActive==='function'&&glmActive()?glmMini(b.width,b.height):null;if(gm){c.globalAlpha=0.75;c.drawImage(gm,0,0);c.globalAlpha=1;}
+    const gm=typeof glmActive==='function'&&glmActive()?mmColor(b.width,b.height):null;if(gm){c.globalAlpha=0.75;c.drawImage(gm,0,0);c.globalAlpha=1;}
     else if(R_.pol){c.globalAlpha=0.75;c.drawImage(R_.pol,0,0,MAPW*R_.polPX,MAPH*R_.polPX,0,0,b.width,b.height);c.globalAlpha=1;}
     if(UI.me&&S.nat[UI.me]){const sx=b.width/MAPW,sy=b.height/MAPH;c.fillStyle='rgba(255,230,140,0.9)';for(let i=0;i<S.reg.length;i++){if(S.reg[i].c!==UI.me)continue;const g=G.regs[i];c.fillRect(g.cx*sx-1.5,g.cy*sy-1.5,3,3);}}
     MM.bg=b;}
@@ -6019,7 +6050,7 @@ function mmDraw(){const wrap=$('#minimap');if(!wrap||!MM.cv||wrap.classList.cont
   const m=$('#map');const sx=MM.cv.width/MAPW,sy=MM.cv.height/MAPH;
   // battles involving me
   if(UI.me){c.fillStyle='#ff5a3c';for(const a of S.arm){if(a.bat!=null&&a.ctl===UI.me){const g=G.regs[a.r];c.beginPath();c.arc(g.cx*sx,g.cy*sy,3,0,Math.PI*2);c.fill();}}}
-  c.strokeStyle='#ffd75e';c.lineWidth=2;c.strokeRect(CAM.x*sx,CAM.y*sy,m.clientWidth/CAM.s*sx,m.clientHeight/CAM.s*sy);}
+  c.strokeStyle='#ffd75e';c.lineWidth=2;c.strokeRect(CAM.x*sx,CAM.y*sy,vsz().w/CAM.s*sx,vsz().h/CAM.s*sy);}
 {const _b=buildHUD;buildHUD=function(){_b();mmSetup();};}
 {const _d=drawNow;drawNow=function(){_d();try{mmDraw();}catch(e){}};}
 // ---------- Divisionsvorlagen ----------
@@ -7001,7 +7032,9 @@ UI.nq=[];UI.nqLast=0;
 function notify(m,kind){if(UI.nq.some(x=>x.m===m))return;UI.nq.push({m,kind,t:performance.now()});UI.nq.sort((a,b)=>(b.kind==='war')-(a.kind==='war'));while(UI.nq.length>4){const i=UI.nq.map(x=>x.kind).lastIndexOf('ok');const j=i>=0?i:UI.nq.length-1;UI.nq.splice(j,1);UI.unread=(UI.unread||0)+1;markLog();}}
 setInterval(()=>{if(!UI.nq.length)return;const now=performance.now();const box=document.querySelector('.toasts');const vis=box?box.children.length:0;if(vis>=2||now-UI.nqLast<1600)return;const n=UI.nq.shift();if(now-n.t>12000&&n.kind!=='war')return;UI.nqLast=now;toast(n.m,n.kind);},300);
 function drawNow(){const _t0=performance.now();try{drawNow_();}finally{const now=performance.now();OVL.cost=(OVL.cost||0)*0.6+(now-_t0)*0.4;OVL.lastFull=now;}}
-function drawNow_(){if(OVL.tf)ovlReset();OVL.cam={x:CAM.x,y:CAM.y,s:CAM.s};const cv=$('#map');const dpr=gfxDpr();const W=cv.clientWidth,H=cv.clientHeight;
+const VSZ={w:0,h:0,ok:false};
+function vsz(){if(!VSZ.ok){const c=document.getElementById('map');if(c){VSZ.w=c.clientWidth;VSZ.h=c.clientHeight;if(typeof ResizeObserver!=='undefined'&&VSZ.w>0){new ResizeObserver(es=>{for(const e of es){const w=Math.round(e.contentRect.width),h=Math.round(e.contentRect.height);if(w>0&&h>0){VSZ.w=w;VSZ.h=h;UI.dirty=true;}}}).observe(c);VSZ.ok=true;}}}return VSZ;}
+function drawNow_(){if(OVL.tf)ovlReset();OVL.cam={x:CAM.x,y:CAM.y,s:CAM.s};const cv=$('#map');const dpr=gfxDpr();const W=vsz().w,H=vsz().h;
   if(cv.width!==Math.round(W*dpr)||cv.height!==Math.round(H*dpr)){cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);}
   const ctx=cv.getContext('2d');
   let targets=null;
@@ -7014,13 +7047,13 @@ function drawNow_(){if(OVL.tf)ovlReset();OVL.cam={x:CAM.x,y:CAM.y,s:CAM.s};const
   if(UI.screen==='hud'&&UI.vasSel&&UI.vasSel.size){ctx.setTransform(dpr*CAM.s,0,0,dpr*CAM.s,-CAM.x*CAM.s*dpr,-CAM.y*CAM.s*dpr);ctx.fillStyle='rgba(255,215,94,0.33)';ctx.strokeStyle='rgba(255,215,94,0.9)';ctx.lineWidth=2/CAM.s;for(const r of UI.vasSel){if(R_.paths[r]){ctx.fill(R_.paths[r]);ctx.stroke(R_.paths[r]);}}}
   if(UI.screen==='hud'&&S.cfg&&S.cfg.build&&UI.me&&S.nat[UI.me]&&S.nat[UI.me].colq){ctx.setTransform(dpr*CAM.s,0,0,dpr*CAM.s,-CAM.x*CAM.s*dpr,-CAM.y*CAM.s*dpr);ctx.setLineDash([4/CAM.s,3/CAM.s]);ctx.strokeStyle='rgba(140,230,160,0.9)';ctx.lineWidth=2/CAM.s;for(const q of S.nat[UI.me].colq){if(R_.paths[q.r])ctx.stroke(R_.paths[q.r]);}ctx.setLineDash([]);}
 }
-function drawUnitsNow(){if(OVL.tf){UI.udirty=true;return;}const cv=$('#units');if(!cv||!S||R_.era!==S.era||!R_.info||R_.info.length!==S.reg.length)return;const dpr=gfxDpr();const W=cv.clientWidth,H=cv.clientHeight;
+function drawUnitsNow(){if(OVL.tf){UI.udirty=true;return;}const cv=$('#units');if(!cv||!S||R_.era!==S.era||!R_.info||R_.info.length!==S.reg.length)return;const dpr=gfxDpr();const W=vsz().w,H=vsz().h;
   if(cv.width!==Math.round(W*dpr)||cv.height!==Math.round(H*dpr)){cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);}
   const ctx=cv.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,cv.width,cv.height);R_.uLast=performance.now();
   const t0=performance.now();drawUnits(ctx,W,H,{dpr,me:UI.me||UI.pickTag,mode:UI.screen==='hud'?UI.mode:'pol',selArmies:UI.selArmies,selFleets:UI.selFleets,selWing:UI.selWing});R_.uCost=(R_.uCost||0)*0.8+(performance.now()-t0)*0.2;}
 // ----- input -----
 const PTR=new Map();let drag=null,pinch=null;
-function clampCam(){const cv=$('#map');const W=cv.clientWidth,H=cv.clientHeight;CAM.s=clamp(CAM.s,Math.max(W/(MAPW+16),H/(MAPH+16)),110);
+function clampCam(){const cv=$('#map');const W=vsz().w,H=vsz().h;CAM.s=clamp(CAM.s,Math.max(W/(MAPW+16),H/(MAPH+16)),110);
   const m=6;CAM.x=clamp(CAM.x,Math.min(-m,MAPW/2-W/CAM.s/2),Math.max(MAPW+m-W/CAM.s,MAPW/2-W/CAM.s/2));CAM.y=clamp(CAM.y,Math.min(-m,MAPH/2-H/CAM.s/2),Math.max(MAPH+m-H/CAM.s,MAPH/2-H/CAM.s/2));}
 function zoomAt(px,py,f){const [wx,wy]=s2w(px,py);CAM.s*=f;clampCam();CAM.x=wx-px/CAM.s;CAM.y=wy-py/CAM.s;clampCam();UI.dirty=true;}
 // Kartenrechteck ohne CSS-Transformation (die Zeichenebenen werden während Gesten verschoben)
